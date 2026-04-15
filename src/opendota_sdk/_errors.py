@@ -28,10 +28,10 @@ class HTTPStatusError(OpenDotaError):
 
     def __init__(
         self,
-        status_code: int,
+        status_code: int | None,
         method: str,
-        url: str,
-        response_text: str = "",
+        url: str | None,
+        response_text: str | None = None,
         headers: dict[str, Any] | None = None,
     ) -> None:
         """Initialize HTTPStatusError.
