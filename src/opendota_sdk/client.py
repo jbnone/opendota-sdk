@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from opendota_sdk._config import OpenDotaClientConfig, default_config
+from opendota_sdk._config import OpenDotaClientConfig
 from opendota_sdk.http._auth import AuthHandler
 from opendota_sdk.http._retry import RetryPolicy
 from opendota_sdk.http._transport import _AsyncHTTPTransport, _SyncHTTPTransport

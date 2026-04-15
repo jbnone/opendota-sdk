@@ -26,8 +26,12 @@ class OpenDotaClientConfig:
     timeout: float = 10.0
     max_retries: int = 3
     backoff_factor: float = 0.5
-    retry_on_status: list[int] = field(default_factory=lambda: [429, 500, 502, 503, 504])
-    default_headers: dict[str, str] = field(default_factory=lambda: {"Accept": "application/json"})
+    retry_on_status: list[int] = field(
+        default_factory=lambda: [429, 500, 502, 503, 504]
+    )
+    default_headers: dict[str, str] = field(
+        default_factory=lambda: {"Accept": "application/json"}
+    )
     verify_ssl: bool = True
     trust_env: bool = True
 

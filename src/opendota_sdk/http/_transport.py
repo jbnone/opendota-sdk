@@ -241,7 +241,7 @@ class _SyncHTTPTransport:
             headers=headers,
             timeout=timeout,
         )
-        return response.content or b''
+        return response.content or b""
 
     def close(self) -> None:
         """Close the session and clean up resources."""
@@ -493,7 +493,7 @@ class _AsyncHTTPTransport:
             headers=headers,
             timeout=timeout,
         )
-        return response.content or b''
+        return response.content or b""
 
     async def close(self) -> None:
         """Close the session and clean up resources."""

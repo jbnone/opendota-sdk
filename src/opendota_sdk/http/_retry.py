@@ -25,7 +25,9 @@ class RetryPolicy:
 
     max_retries: int = 3
     backoff_factor: float = 0.5
-    retry_on_status: list[int] = field(default_factory=lambda: [429, 500, 502, 503, 504])
+    retry_on_status: list[int] = field(
+        default_factory=lambda: [429, 500, 502, 503, 504]
+    )
     retry_on_timeout: bool = True
 
 
@@ -62,8 +64,7 @@ def build_retry_decorator(policy: RetryPolicy) -> Retrying:
             stop=stop_after_attempt(policy.max_retries),
             wait=wait_exponential(multiplier=policy.backoff_factor, min=1, max=60),
             retry=(
-                retry_if_result(should_retry)
-                | retry_if_exception_type(TimeoutError)
+                retry_if_result(should_retry) | retry_if_exception_type(TimeoutError)
             ),
             reraise=True,
         )
