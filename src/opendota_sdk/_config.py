@@ -16,7 +16,7 @@ class OpenDotaClientConfig:
         max_retries: Maximum number of retries for failed requests.
         backoff_factor: Exponential backoff factor for retries.
         retry_on_status: HTTP status codes that trigger automatic retries.
-        default_headers: Default headers to include in all requests.
+        extra_headers: Extra headers to include in all requests.
         verify_ssl: Whether to verify SSL certificates.
         trust_env: Whether to trust environment settings for HTTP proxies, etc.
     """
@@ -29,16 +29,27 @@ class OpenDotaClientConfig:
     retry_on_status: list[int] = field(
         default_factory=lambda: [429, 500, 502, 503, 504]
     )
-    default_headers: dict[str, str] = field(
-        default_factory=lambda: {"Accept": "application/json"}
-    )
+    extra_headers: dict[str, str] = field(default_factory=dict)
     verify_ssl: bool = True
     trust_env: bool = True
 
-    def __post_init__(self) -> None:
-        """Populate api_key from environment if not provided."""
-        if not self.api_key:
-            self.api_key = os.getenv("OPENDOTA_API_KEY")
+    def merge_other(self, other: "OpenDotaClientConfig") -> "OpenDotaClientConfig":
+        """Merge another config into this one, with the other config taking precedence."""
+        return OpenDotaClientConfig(
+            api_key=other.api_key or self.api_key,
+            base_url=other.base_url or self.base_url,
+            timeout=other.timeout or self.timeout,
+            max_retries=other.max_retries or self.max_retries,
+            backoff_factor=other.backoff_factor or self.backoff_factor,
+            retry_on_status=other.retry_on_status or self.retry_on_status,
+            extra_headers={**self.extra_headers, **other.extra_headers},
+            verify_ssl=other.verify_ssl
+            if other.verify_ssl is not None
+            else self.verify_ssl,
+            trust_env=other.trust_env
+            if other.trust_env is not None
+            else self.trust_env,
+        )
 
 
 def default_config() -> OpenDotaClientConfig:

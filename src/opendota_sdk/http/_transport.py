@@ -18,11 +18,13 @@ from ._auth import AuthHandler
 from ._retry import RetryPolicy, build_retry_decorator
 
 
-class _SyncHTTPTransport:
-    """Synchronous HTTP transport using niquests.
+_DEFAULT_HEADERS = {"Accept": "application/json"}
 
-    Handles request execution, retries, rate limiting, and API key authentication
-    for synchronous operations.
+
+class HTTPTransportBase:
+    """Base class for HTTP transports.
+
+    Defines the interface and common functionality for both sync and async transports.
     """
 
     def __init__(
@@ -31,7 +33,7 @@ class _SyncHTTPTransport:
         auth_handler: AuthHandler,
         retry_policy: RetryPolicy,
     ) -> None:
-        """Initialize the sync transport.
+        """Initialize the transport.
 
         Args:
             config: The client configuration.
@@ -41,10 +43,9 @@ class _SyncHTTPTransport:
         self.config = config
         self.auth_handler = auth_handler
         self.retry_policy = retry_policy
-        self._session = niquests.Session()
         self._retry_decorator = build_retry_decorator(retry_policy)
 
-    def _build_url(self, path: str) -> str:
+    def build_url(self, path: str) -> str:
         """Build full URL from base URL and path.
 
         Args:
@@ -53,9 +54,34 @@ class _SyncHTTPTransport:
         Returns:
             The full URL.
         """
-        return urljoin(self.config.base_url, path.lstrip("/"))
+        base_url = self.config.base_url
+        if base_url:
+            # Ensure base URL ends with a slash for proper urljoin behavior
+            sanitized_base_url = base_url if base_url.endswith("/") else base_url + "/"
+        else:
+            sanitized_base_url = ""
 
-    def _handle_response(
+        return urljoin(sanitized_base_url, path.lstrip("/"))
+
+    def build_headers(
+        self, request_headers: dict[str, str] | None = None
+    ) -> dict[str, str]:
+        """Build request headers by merging defaults, config, and extra headers.
+
+        Args:
+            extra_headers: Additional headers to include in the request.
+
+        Returns:
+            The merged headers dictionary.
+        """
+        merged_headers = _DEFAULT_HEADERS.copy()
+        merged_headers.update(self.config.extra_headers or {})
+        if request_headers:
+            merged_headers.update(request_headers)
+
+        return self.auth_handler.apply_to_headers(merged_headers)
+
+    def handle_response(
         self, response: niquests.Response, method: str
     ) -> niquests.Response:
         """Validate response status and raise errors if needed.
@@ -94,6 +120,30 @@ class _SyncHTTPTransport:
 
         return response
 
+
+class SyncHTTPTransport(HTTPTransportBase):
+    """Synchronous HTTP transport using niquests.
+
+    Handles request execution, retries, rate limiting, and API key authentication
+    for synchronous operations.
+    """
+
+    def __init__(
+        self,
+        config: OpenDotaClientConfig,
+        auth_handler: AuthHandler,
+        retry_policy: RetryPolicy,
+    ) -> None:
+        """Initialize the sync transport.
+
+        Args:
+            config: The client configuration.
+            auth_handler: Authentication handler for API key injection.
+            retry_policy: Policy for retrying failed requests.
+        """
+        super().__init__(config, auth_handler, retry_policy)
+        self._session = niquests.Session()
+
     def request(
         self,
         method: str,
@@ -123,28 +173,20 @@ class _SyncHTTPTransport:
             TransportError: For connection/timeout errors.
             RateLimitError: For rate limit errors.
         """
-        url = self._build_url(path)
-        timeout = timeout or self.config.timeout
-        merged_headers = dict(self.config.default_headers or {})
-        if headers:
-            merged_headers.update(headers)
-        merged_headers = self.auth_handler.apply_to_headers(merged_headers)
-        merged_params = dict(params or {})
-        merged_params = self.auth_handler.apply_to_params(merged_params)
 
         def _do_request() -> niquests.Response:
             try:
                 response = self._session.request(
                     method=method,
-                    url=url,
-                    params=merged_params or None,
+                    url=self.build_url(path),
+                    params=params or None,
                     json=json_body,
                     data=data,
-                    headers=merged_headers,
-                    timeout=timeout,
+                    headers=self.build_headers(headers),
+                    timeout=timeout or self.config.timeout,
                     verify=self.config.verify_ssl,
                 )
-                return self._handle_response(response, method)
+                return self.handle_response(response, method)
             except (
                 niquests.RequestException,
                 niquests.ConnectionError,
@@ -247,7 +289,7 @@ class _SyncHTTPTransport:
         """Close the session and clean up resources."""
         self._session.close()
 
-    def __enter__(self) -> "_SyncHTTPTransport":
+    def __enter__(self) -> "SyncHTTPTransport":
         """Enter context manager."""
         return self
 
@@ -256,7 +298,7 @@ class _SyncHTTPTransport:
         self.close()
 
 
-class _AsyncHTTPTransport:
+class AsyncHTTPTransport(HTTPTransportBase):
     """Asynchronous HTTP transport using niquests.
 
     Handles request execution, retries, rate limiting, and API key authentication
@@ -279,71 +321,8 @@ class _AsyncHTTPTransport:
             auth_handler: Authentication handler for API key injection.
             retry_policy: Policy for retrying failed requests.
         """
-        self.config = config
-        self.auth_handler = auth_handler
-        self.retry_policy = retry_policy
-        self._session: niquests.AsyncSession | None = None
-        self._retry_decorator = build_retry_decorator(retry_policy)
-
-    async def _ensure_session(self) -> niquests.AsyncSession:
-        """Lazily create and return the async session.
-
-        Returns:
-            The async session instance.
-        """
-        if self._session is None:
-            self._session = niquests.AsyncSession()
-        return self._session
-
-    def _build_url(self, path: str) -> str:
-        """Build full URL from base URL and path.
-
-        Args:
-            path: The API path (e.g., "/heroStats").
-
-        Returns:
-            The full URL.
-        """
-        return urljoin(self.config.base_url, path.lstrip("/"))
-
-    def _handle_response(
-        self, response: niquests.Response, method: str
-    ) -> niquests.Response:
-        """Validate response status and raise errors if needed.
-
-        Args:
-            response: The HTTP response.
-            method: The HTTP method used.
-
-        Returns:
-            The response if valid.
-
-        Raises:
-            RateLimitError: If rate limited (429).
-            HTTPStatusError: For other error status codes.
-        """
-        if response.status_code == 429:
-            retry_after = None
-            if "Retry-After" in response.headers:
-                try:
-                    retry_after = int(response.headers["Retry-After"])
-                except (ValueError, TypeError):
-                    pass
-            raise RateLimitError(
-                retry_after=retry_after,
-                message=f"Rate limited on {method} {response.url}",
-            )
-
-        if not response.ok:
-            raise HTTPStatusError(
-                status_code=response.status_code,
-                method=method,
-                url=response.url,
-                response_text=response.text,
-                headers=dict(response.headers),
-            )
-
-        return response
+        super().__init__(config, auth_handler, retry_policy)
+        self._session = niquests.AsyncSession()
 
     async def request(
         self,
@@ -374,29 +353,20 @@ class _AsyncHTTPTransport:
             TransportError: For connection/timeout errors.
             RateLimitError: For rate limit errors.
         """
-        session = await self._ensure_session()
-        url = self._build_url(path)
-        timeout = timeout or self.config.timeout
-        merged_headers = dict(self.config.default_headers or {})
-        if headers:
-            merged_headers.update(headers)
-        merged_headers = self.auth_handler.apply_to_headers(merged_headers)
-        merged_params = dict(params or {})
-        merged_params = self.auth_handler.apply_to_params(merged_params)
 
         async def _do_request() -> niquests.Response:
             try:
-                response = await session.request(
+                response = await self._session.request(
                     method=method,
-                    url=url,
-                    params=merged_params or None,
+                    url=self.build_url(path),
+                    params=params or None,
                     json=json_body,
                     data=data,
-                    headers=merged_headers,
-                    timeout=timeout,
+                    headers=self.build_headers(headers),
+                    timeout=timeout or self.config.timeout,
                     verify=self.config.verify_ssl,
                 )
-                return self._handle_response(response, method)
+                return self.handle_response(response, method)
             except (
                 niquests.RequestException,
                 niquests.ConnectionError,
@@ -500,7 +470,7 @@ class _AsyncHTTPTransport:
         if self._session is not None:
             await self._session.close()
 
-    async def __aenter__(self) -> "_AsyncHTTPTransport":
+    async def __aenter__(self) -> "AsyncHTTPTransport":
         """Async context manager entry."""
         return self
 

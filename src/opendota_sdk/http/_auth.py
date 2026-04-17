@@ -48,21 +48,6 @@ class AuthHandler:
             headers[self.header_name] = self.api_key
         return headers
 
-    def apply_to_params(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Inject API key into query parameters.
-
-        Args:
-            params: The query parameters dictionary to modify.
-
-        Returns:
-            The modified parameters dictionary with API key injected (if available
-            and query_param_name is set).
-        """
-        if self.api_key and self.query_param_name:
-            params = dict(params)
-            params[self.query_param_name] = self.api_key
-        return params
-
     def has_auth(self) -> bool:
         """Check if an API key is configured.
 

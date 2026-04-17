@@ -1,11 +1,15 @@
 """Public client interface for the OpenDota API."""
 
+import logging
 from typing import Any
 
-from opendota_sdk._config import OpenDotaClientConfig
+from opendota_sdk._config import OpenDotaClientConfig, config_from_env, default_config
 from opendota_sdk.http._auth import AuthHandler
 from opendota_sdk.http._retry import RetryPolicy
-from opendota_sdk.http._transport import _AsyncHTTPTransport, _SyncHTTPTransport
+from opendota_sdk.http._transport import AsyncHTTPTransport, SyncHTTPTransport
+from opendota_sdk.responses import HeroesResponse
+
+logger = logging.getLogger(__name__)
 
 
 class OpenDotaClient:
@@ -51,23 +55,30 @@ class OpenDotaClient:
             config: Optional OpenDotaClientConfig for advanced customization.
                 If provided, overrides all other arguments.
         """
-        if config is None:
-            config = OpenDotaClientConfig(
-                api_key=api_key,
-                timeout=timeout,
-                max_retries=max_retries,
-                base_url=base_url or "https://api.opendota.com/api",
-            )
-
-        self._config = config
-        self._auth_handler = AuthHandler(api_key=config.api_key)
-        self._retry_policy = RetryPolicy(
-            max_retries=config.max_retries,
-            backoff_factor=config.backoff_factor,
-            retry_on_status=config.retry_on_status,
+        config_from_args = OpenDotaClientConfig(
+            api_key=api_key,
+            timeout=timeout,
+            max_retries=max_retries,
         )
-        self._transport = _SyncHTTPTransport(
-            config=config,
+        if base_url:
+            config_from_args.base_url = base_url
+
+        if config is None:
+            defaults = default_config()
+            self._config = defaults.merge_other(config_from_env()).merge_other(
+                config_from_args
+            )
+        else:
+            self._config = config
+
+        self._auth_handler = AuthHandler(api_key=self._config.api_key)
+        self._retry_policy = RetryPolicy(
+            max_retries=self._config.max_retries,
+            backoff_factor=self._config.backoff_factor,
+            retry_on_status=self._config.retry_on_status,
+        )
+        self._transport = SyncHTTPTransport(
+            config=self._config,
             auth_handler=self._auth_handler,
             retry_policy=self._retry_policy,
         )
@@ -100,7 +111,7 @@ class OpenDotaClient:
             **kwargs,
         )
 
-    def get_heroes(self) -> list[dict[str, Any]]:
+    def get_heroes(self) -> HeroesResponse:
         """Retrieve a list of all Dota 2 heroes.
 
         Returns:
@@ -111,7 +122,25 @@ class OpenDotaClient:
             TransportError: For connection or timeout errors.
             RateLimitError: If rate limited.
         """
-        return self._request(method="GET", path="/heroStats")
+        heroes_api: list[dict[str, Any]] = self._request(method="GET", path="/heroes")
+        heroes_constants: dict[str, dict[str, Any]] = self._request(
+            method="GET", path="/constants/heroes"
+        )
+
+        # Merge the two responses to update constant hero data with information from the api
+        heroes: list[dict[str, Any]] = []
+        for hero in heroes_api:
+            hero_id = str(hero["id"])
+            if hero_id in heroes_constants:
+                merged_hero = {**heroes_constants[hero_id], **hero}
+                heroes.append(merged_hero)
+            else:
+                logger.warning(
+                    f"Hero ID {hero_id} from /heroes not found in /constants/heroes, using API data only"
+                )
+                heroes.append(hero)
+
+        return HeroesResponse(heroes)
 
     def get_match(self, match_id: int) -> dict[str, Any]:
         """Retrieve detailed information about a specific match.
@@ -235,7 +264,7 @@ class OpenDotaAsyncClient:
             backoff_factor=config.backoff_factor,
             retry_on_status=config.retry_on_status,
         )
-        self._transport = _AsyncHTTPTransport(
+        self._transport = AsyncHTTPTransport(
             config=config,
             auth_handler=self._auth_handler,
             retry_policy=self._retry_policy,
