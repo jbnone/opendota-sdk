@@ -119,15 +119,6 @@ wheels = [
 ]
 
 [[package]]
-name = "idna"
-version = "3.11"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6f/6d/0703ccc57f3a7233505399edb88de3cbd678da106337b9fcde432b65ed60/idna-3.11.tar.gz", hash = "sha256:795dafcc9c04ed0c1fb032c2aa73654d8e8c5023a7df64a53f39190ada629902", size = 194582, upload-time = "2025-10-12T14:55:20.501Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/0e/61/66938bbb5fc52dbdf84594873d5b51fb1f7c7794e9c0f5bd885f30bc507b/idna-3.11-py3-none-any.whl", hash = "sha256:771a87f49d9defaf64091e6e6fe9c18d4833f140bd19464795bc32d966ca37ea", size = 71008, upload-time = "2025-10-12T14:55:18.883Z" },
-]
-
-[[package]]
 name = "iniconfig"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -203,28 +194,17 @@ wheels = [
 ]
 
 [[package]]
-name = "kiss-headers"
-version = "2.5.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/09/c1/8c6c563328ca0721b7c5fb7dbcd1e3ba48b5a2e336890bb7510c5146b6b6/kiss_headers-2.5.0.tar.gz", hash = "sha256:63ce797b6d85763d4b0e9611bd62d30fe31b0c4edb601838e76a039e4a4cdb59", size = 71911, upload-time = "2025-01-27T07:48:52.453Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/24/60/c63e6ff0ee5c038bc31ebcfd5824730a6637e04cd769080c2dd95f0e3ad6/kiss_headers-2.5.0-py3-none-any.whl", hash = "sha256:db49d2e906aa1da7a7bb98357f4c21aa857dc6ed426753d9d90c527eb1b7aa6a", size = 43579, upload-time = "2025-01-27T07:48:50.092Z" },
-]
-
-[[package]]
 name = "niquests"
-version = "3.10.0"
+version = "3.18.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "charset-normalizer" },
-    { name = "idna" },
-    { name = "kiss-headers" },
     { name = "urllib3-future" },
-    { name = "wassima" },
+    { name = "wassima", marker = "sys_platform != 'emscripten'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/63/b3/27cdc422d3c92ec2e3efb5d53e9a9d3deeef01074d356019b297d2fd909c/niquests-3.10.0.tar.gz", hash = "sha256:948df009a55da59d532d07b69dc46902796033e43cd2d2d683474e7aa086ad0e", size = 534280, upload-time = "2024-10-21T11:58:08.739Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8e/ef/a69f0336532434db5c3d86fe21131aec7fea7ce3f090a86e4a79f5984944/niquests-3.18.5.tar.gz", hash = "sha256:5d97b6fc90219d0d8d8feea11b78267a5ac003290a90b5a5a5d8db7c4b7312f0", size = 1022762, upload-time = "2026-04-10T13:20:39.765Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f0/d8/74a29d00851c90365eb3a2273dac01f72d6308346e3766518e09bdb10b0e/niquests-3.10.0-py3-none-any.whl", hash = "sha256:1cf55b42ba5554775a3fa2e1f3f79ae0414d94e8c7f098073332983d28a0dfad", size = 120154, upload-time = "2024-10-21T11:58:07.056Z" },
+    { url = "https://files.pythonhosted.org/packages/bf/ca/e23538eff77d5921e53b6561002c86d60bcf04f62546ef1de7759c437bea/niquests-3.18.5-py3-none-any.whl", hash = "sha256:fe486ce71204f9f5ade1266ab1568cc09e4af772409070e26e65b0f8fda5c642", size = 208624, upload-time = "2026-04-10T13:20:38.032Z" },
 ]
 
 [[package]]
@@ -246,7 +226,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "niquests", specifier = ">=3.9,<4.0" },
+    { name = "niquests", specifier = ">=3.18.5,<4.0" },
     { name = "tenacity", specifier = ">=9.0,<10.0" },
 ]
 

@@ -8,7 +8,7 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-  "niquests>=3.9,<4.0",
+  "niquests>=3.18.5,<4.0",
   "tenacity>=9.0,<10.0",
 ]
 
