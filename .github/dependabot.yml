@@ -1,16 +1,17 @@
 version: 2
 
 updates:
-  - package-ecosystem: "pip"
+  - package-ecosystem: "uv"
     directory: "/"
+
+    allow:
+      - dependency-type: "development"
+
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
 
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
+    cooldown:
+      default-days: 7
 
     commit-message:
       prefix: "deps"
