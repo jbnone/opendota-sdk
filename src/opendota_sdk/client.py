@@ -12,7 +12,32 @@ from opendota_sdk.responses import HeroesResponse
 logger = logging.getLogger(__name__)
 
 
-class OpenDotaClient:
+class ClientLogicMixin:
+    """Mixin for client logic that can be shared between sync and async clients."""
+
+    def make_heroes_response(
+        self,
+        *,
+        heroes_api: list[dict[str, Any]],
+        heroes_constants: dict[str, dict[str, Any]],
+    ) -> HeroesResponse:
+        """Updates hero data from the constants  with the data from /heroes and return a HeroesResponse."""
+        heroes: list[dict[str, Any]] = []
+        for hero in heroes_api:
+            hero_id = str(hero["id"])
+            if hero_id in heroes_constants:
+                merged_hero = {**heroes_constants[hero_id], **hero}
+                heroes.append(merged_hero)
+            else:
+                logger.warning(
+                    f"Hero ID {hero_id} from /heroes not found in /constants/heroes, using API data only"
+                )
+                heroes.append(hero)
+
+        return HeroesResponse(heroes)
+
+
+class OpenDotaClient(ClientLogicMixin):
     """Synchronous client for the OpenDota API.
 
     Provides high-level, ergonomic access to OpenDota API endpoints with
@@ -83,10 +108,10 @@ class OpenDotaClient:
             retry_policy=self._retry_policy,
         )
 
-    def _request(
+    def _get(
         self,
-        method: str,
         path: str,
+        *,
         params: dict[str, Any] | None = None,
         json_body: Any | None = None,
         **kwargs: Any,
@@ -104,7 +129,7 @@ class OpenDotaClient:
             The decoded JSON response body.
         """
         return self._transport.request_json(
-            method=method,
+            method="GET",
             path=path,
             params=params,
             json_body=json_body,
@@ -112,88 +137,19 @@ class OpenDotaClient:
         )
 
     def get_heroes(self) -> HeroesResponse:
-        """Retrieve a list of all Dota 2 heroes.
+        """Retrieve info about all Dota 2 heroes.
 
         Returns:
-            A list of hero data dictionaries.
+            A HeroesResponse containing a list of hero data.
 
         Raises:
-            HTTPStatusError: If the API returns an error status.
-            TransportError: For connection or timeout errors.
-            RateLimitError: If rate limited.
+            OpenDotaError: For any API-related errors, including HTTP errors, rate limits, and decoding issues.
         """
-        heroes_api: list[dict[str, Any]] = self._request(method="GET", path="/heroes")
-        heroes_constants: dict[str, dict[str, Any]] = self._request(
-            method="GET", path="/constants/heroes"
+        heroes_api: list[dict[str, Any]] = self._get("/heroes")
+        heroes_constants: dict[str, dict[str, Any]] = self._get("/constants/heroes")
+        return self.make_heroes_response(
+            heroes_api=heroes_api, heroes_constants=heroes_constants
         )
-
-        # Merge the two responses to update constant hero data with information from the api
-        heroes: list[dict[str, Any]] = []
-        for hero in heroes_api:
-            hero_id = str(hero["id"])
-            if hero_id in heroes_constants:
-                merged_hero = {**heroes_constants[hero_id], **hero}
-                heroes.append(merged_hero)
-            else:
-                logger.warning(
-                    f"Hero ID {hero_id} from /heroes not found in /constants/heroes, using API data only"
-                )
-                heroes.append(hero)
-
-        return HeroesResponse(heroes)
-
-    def get_match(self, match_id: int) -> dict[str, Any]:
-        """Retrieve detailed information about a specific match.
-
-        Args:
-            match_id: The ID of the match to retrieve.
-
-        Returns:
-            Match data as a dictionary.
-
-        Raises:
-            HTTPStatusError: If the API returns an error status.
-            TransportError: For connection or timeout errors.
-            RateLimitError: If rate limited.
-        """
-        return self._request(method="GET", path=f"/matches/{match_id}")
-
-    def get_player_matches(
-        self, account_id: int, limit: int = 20
-    ) -> list[dict[str, Any]]:
-        """Retrieve recent matches for a player.
-
-        Args:
-            account_id: The player's account ID.
-            limit: Maximum number of matches to retrieve (default: 20).
-
-        Returns:
-            A list of match data dictionaries.
-
-        Raises:
-            HTTPStatusError: If the API returns an error status.
-            TransportError: For connection or timeout errors.
-            RateLimitError: If rate limited.
-        """
-        return self._request(
-            method="GET", path=f"/players/{account_id}/matches", params={"limit": limit}
-        )
-
-    def get_player(self, account_id: int) -> dict[str, Any]:
-        """Retrieve player profile information.
-
-        Args:
-            account_id: The player's account ID.
-
-        Returns:
-            Player profile data as a dictionary.
-
-        Raises:
-            HTTPStatusError: If the API returns an error status.
-            TransportError: For connection or timeout errors.
-            RateLimitError: If rate limited.
-        """
-        return self._request(method="GET", path=f"/players/{account_id}")
 
     def close(self) -> None:
         """Close the client and release resources."""
@@ -208,7 +164,7 @@ class OpenDotaClient:
         self.close()
 
 
-class OpenDotaAsyncClient:
+class OpenDotaAsyncClient(ClientLogicMixin):
     """Asynchronous client for the OpenDota API.
 
     Provides high-level, ergonomic access to OpenDota API endpoints with
@@ -270,10 +226,10 @@ class OpenDotaAsyncClient:
             retry_policy=self._retry_policy,
         )
 
-    async def _request(
+    async def _get(
         self,
-        method: str,
         path: str,
+        *,
         params: dict[str, Any] | None = None,
         json_body: Any | None = None,
         **kwargs: Any,
@@ -291,80 +247,29 @@ class OpenDotaAsyncClient:
             The decoded JSON response body.
         """
         return await self._transport.request_json(
-            method=method,
+            method="GET",
             path=path,
             params=params,
             json_body=json_body,
             **kwargs,
         )
 
-    async def get_heroes(self) -> list[dict[str, Any]]:
-        """Retrieve a list of all Dota 2 heroes.
+    async def get_heroes(self) -> HeroesResponse:
+        """Retrieve info about all Dota 2 heroes.
 
         Returns:
-            A list of hero data dictionaries.
+            A HeroesResponse containing a list of hero data.
 
         Raises:
-            HTTPStatusError: If the API returns an error status.
-            TransportError: For connection or timeout errors.
-            RateLimitError: If rate limited.
+            OpenDotaError: For any API-related errors, including HTTP errors, rate limits, and decoding issues.
         """
-        return await self._request(method="GET", path="/heroStats")
-
-    async def get_match(self, match_id: int) -> dict[str, Any]:
-        """Retrieve detailed information about a specific match.
-
-        Args:
-            match_id: The ID of the match to retrieve.
-
-        Returns:
-            Match data as a dictionary.
-
-        Raises:
-            HTTPStatusError: If the API returns an error status.
-            TransportError: For connection or timeout errors.
-            RateLimitError: If rate limited.
-        """
-        return await self._request(method="GET", path=f"/matches/{match_id}")
-
-    async def get_player_matches(
-        self, account_id: int, limit: int = 20
-    ) -> list[dict[str, Any]]:
-        """Retrieve recent matches for a player.
-
-        Args:
-            account_id: The player's account ID.
-            limit: Maximum number of matches to retrieve (default: 20).
-
-        Returns:
-            A list of match data dictionaries.
-
-        Raises:
-            HTTPStatusError: If the API returns an error status.
-            TransportError: For connection or timeout errors.
-            RateLimitError: If rate limited.
-        """
-        return await self._request(
-            method="GET",
-            path=f"/players/{account_id}/matches",
-            params={"limit": limit},
+        heroes_api: list[dict[str, Any]] = await self._get("/heroes")
+        heroes_constants: dict[str, dict[str, Any]] = await self._get(
+            "/constants/heroes"
         )
-
-    async def get_player(self, account_id: int) -> dict[str, Any]:
-        """Retrieve player profile information.
-
-        Args:
-            account_id: The player's account ID.
-
-        Returns:
-            Player profile data as a dictionary.
-
-        Raises:
-            HTTPStatusError: If the API returns an error status.
-            TransportError: For connection or timeout errors.
-            RateLimitError: If rate limited.
-        """
-        return await self._request(method="GET", path=f"/players/{account_id}")
+        return self.make_heroes_response(
+            heroes_api=heroes_api, heroes_constants=heroes_constants
+        )
 
     async def close(self) -> None:
         """Close the client and release resources."""
