@@ -246,8 +246,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "niquests", specifier = "==3.10.0" },
-    { name = "tenacity", specifier = "==9.1.4" },
+    { name = "niquests", specifier = ">=3.9,<4.0" },
+    { name = "tenacity", specifier = ">=9.0,<10.0" },
 ]
 
 [package.metadata.requires-dev]

@@ -12,15 +12,12 @@ class AuthHandler:
     Attributes:
         api_key: The API key for authentication.
         header_name: The header name for API key injection (e.g., "X-API-Key").
-        query_param_name: The query parameter name for API key injection.
-            If None, headers are used exclusively.
     """
 
     def __init__(
         self,
         api_key: str | None = None,
         header_name: str = "X-API-Key",
-        query_param_name: str | None = None,
     ) -> None:
         """Initialize the authentication handler.
 
@@ -28,11 +25,9 @@ class AuthHandler:
             api_key: Optional API key. If not provided, reads from OPENDOTA_API_KEY
                 environment variable.
             header_name: The HTTP header name for API key injection.
-            query_param_name: Optional query parameter name for API key injection.
         """
         self.api_key = api_key or os.getenv("OPENDOTA_API_KEY")
         self.header_name = header_name
-        self.query_param_name = query_param_name
 
     def apply_to_headers(self, headers: dict[str, Any]) -> dict[str, Any]:
         """Inject API key into request headers.
