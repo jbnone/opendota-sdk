@@ -33,16 +33,9 @@ jobs:
     - name: Run tests
       run: uv run pytest
 
-  testpypi-publish:
+  build:
     needs: test
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-
-    environment:
-      name: testpypi
-      url: https://test.pypi.org/p/opendota-sdk
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -55,6 +48,29 @@ jobs:
 
       - name: Build
         run: uv build
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: python-package-distributions
+          path: dist/
+
+  testpypi-publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/opendota-sdk
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: python-package-distributions
+          path: dist/
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
