@@ -1,16 +1,36 @@
 [project]
 name = "opendota-sdk"
-version = "0.1.0"
+version = "0.1.0a1"
 description = "SDK for the OpenDota API, providing enhanced capabilities for Dota 2 data."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
 authors = [
     { name = "Juan Manuel Bermudez Cabrera", email = "juanmorestep@gmail.com" }
 ]
-requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
 dependencies = [
   "niquests>=3.9,<4.0",
   "tenacity>=9.0,<10.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/jbnone/opendota-sdk"
+Issues = "https://github.com/jbnone/opendota-sdk/issues"
+Repository = "https://github.com/jbnone/opendota-sdk"
+
 
 [build-system]
 requires = ["uv_build>=0.11.6,<0.12.0"]
