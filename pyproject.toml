@@ -1,6 +1,6 @@
 [project]
 name = "opendota-sdk"
-version = "0.1.0a1"
+version = "0.1.0-alpha.1"
 description = "SDK for the OpenDota API, providing enhanced capabilities for Dota 2 data."
 readme = "README.md"
 license = "MIT"
