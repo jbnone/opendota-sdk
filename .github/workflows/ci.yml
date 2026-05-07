@@ -66,6 +66,43 @@ jobs:
       url: https://test.pypi.org/p/opendota-sdk
 
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set alpha version based on run id
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          run_id = os.environ['GITHUB_RUN_ID']
+          version = f'0.1.0-alpha.{run_id}'
+
+          pyproject = Path('pyproject.toml')
+          pyproject.write_text(
+              re.sub(
+                  r'^(version\s*=\s*")[^"]+(".*)$',
+                  rf'\1{version}\2',
+                  pyproject.read_text(),
+                  count=1,
+                  flags=re.MULTILINE,
+              )
+          )
+
+          init = Path('src/opendota_sdk/__init__.py')
+          init.write_text(
+              re.sub(
+                  r'^(.*__version__\s*=\s*")[^"]+(".*)$',
+                  rf'\1{version}\2',
+                  init.read_text(),
+                  count=1,
+                  flags=re.MULTILINE,
+              )
+          )
+
+          print('Set project version to', version)
+          PY
+
       - name: Download artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
