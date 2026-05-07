@@ -46,14 +46,53 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Build
-        run: uv build
+      - name: Build PyPI artifact
+        run: |
+          rm -rf dist dist-pypi dist-testpypi
+          uv build
+          mkdir -p dist-pypi
+          cp dist/* dist-pypi/
 
-      - name: Upload artifacts
+      - name: Set alpha version for TestPyPI
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          run_id = os.environ['GITHUB_RUN_ID']
+          version = f'0.1.0-alpha.{run_id}'
+
+          def replace(path, pattern, repl):
+              text = path.read_text()
+              path.write_text(re.sub(pattern, repl, text, count=1, flags=re.MULTILINE))
+
+          replace(Path('pyproject.toml'), r'^(version\s*=\s*")(.*)(".*)$', lambda m: f"{m.group(1)}{version}{m.group(3)}")
+          replace(Path('src/opendota_sdk/__init__.py'), r'^(.*__version__\s*=\s*")(.*)(".*)$', lambda m: f"{m.group(1)}{version}{m.group(3)}")
+          print('Set project version to', version)
+          PY
+
+      - name: Build TestPyPI artifact
+        run: |
+          rm -rf dist
+          uv build
+          mkdir -p dist-testpypi
+          cp dist/* dist-testpypi/
+
+      - name: Restore original version files
+        run: git restore pyproject.toml src/opendota_sdk/__init__.py
+
+      - name: Upload PyPI artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: python-package-distributions
-          path: dist/
+          name: python-package-distributions-pypi
+          path: dist-pypi/
+
+      - name: Upload TestPyPI artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: python-package-distributions-testpypi
+          path: dist-testpypi/
 
   testpypi-publish:
     needs: build
@@ -66,47 +105,10 @@ jobs:
       url: https://test.pypi.org/p/opendota-sdk
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-
-      - name: Set alpha version based on run id
-        run: |
-          python - <<'PY'
-          import os
-          import re
-          from pathlib import Path
-
-          run_id = os.environ['GITHUB_RUN_ID']
-          version = f'0.1.0-alpha.{run_id}'
-
-          pyproject = Path('pyproject.toml')
-          pyproject.write_text(
-              re.sub(
-                  r'^(version\s*=\s*")[^"]+(".*)$',
-                  rf'\1{version}\2',
-                  pyproject.read_text(),
-                  count=1,
-                  flags=re.MULTILINE,
-              )
-          )
-
-          init = Path('src/opendota_sdk/__init__.py')
-          init.write_text(
-              re.sub(
-                  r'^(.*__version__\s*=\s*")[^"]+(".*)$',
-                  rf'\1{version}\2',
-                  init.read_text(),
-                  count=1,
-                  flags=re.MULTILINE,
-              )
-          )
-
-          print('Set project version to', version)
-          PY
-
-      - name: Download artifacts
+      - name: Download TestPyPI artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: python-package-distributions
+          name: python-package-distributions-testpypi
           path: dist/
 
       - name: Publish
@@ -115,6 +117,7 @@ jobs:
           repository-url: https://test.pypi.org/legacy/
 
   pypi-publish:
+    if: startsWith(github.ref, 'refs/tags/')  # only publish to PyPI on tag pushes
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -125,10 +128,10 @@ jobs:
       url: https://pypi.org/p/opendota-sdk
     
     steps:
-      - name: Download artifacts
+      - name: Download PyPI artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: python-package-distributions
+          name: python-package-distributions-pypi
           path: dist/
 
       - name: Publish
