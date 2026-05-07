@@ -81,8 +81,8 @@ jobs:
           pyproject = Path('pyproject.toml')
           pyproject.write_text(
               re.sub(
-                  r'^(version\s*=\s*")[^"]+(".*)$',
-                  rf'\1{version}\2',
+                  r'^(version\s*=\s*")(.*)(".*)$',
+                  lambda m: f"{m.group(1)}{version}{m.group(3)}",
                   pyproject.read_text(),
                   count=1,
                   flags=re.MULTILINE,
@@ -92,8 +92,8 @@ jobs:
           init = Path('src/opendota_sdk/__init__.py')
           init.write_text(
               re.sub(
-                  r'^(.*__version__\s*=\s*")[^"]+(".*)$',
-                  rf'\1{version}\2',
+                  r'^(.*__version__\s*=\s*")(.*)(".*)$',
+                  lambda m: f"{m.group(1)}{version}{m.group(3)}",
                   init.read_text(),
                   count=1,
                   flags=re.MULTILINE,
