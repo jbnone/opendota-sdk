@@ -2,22 +2,17 @@
 
 import pytest
 from unittest.mock import MagicMock, patch, Mock
-import json
 
-import niquests
 
 from opendota_sdk._config import OpenDotaClientConfig
 from opendota_sdk._errors import (
     HTTPStatusError,
     RateLimitError,
-    ResponseDecodeError,
-    TransportError,
 )
 from opendota_sdk.http._auth import AuthHandler
 from opendota_sdk.http._retry import RetryPolicy
 from opendota_sdk.http._transport import (
     HTTPTransportBase,
-    SyncHTTPTransport,
     AsyncHTTPTransport,
 )
 
@@ -135,93 +130,6 @@ def test_handle_response_error_status_codes(status_code, expected_exception):
 
     with pytest.raises(expected_exception):
         transport.handle_response(response, "GET")
-
-
-@patch("niquests.Session")
-def test_sync_request_success_with_auth_headers(mock_session_class):
-    """Test successful sync request includes authentication headers."""
-    mock_session = MagicMock()
-    mock_session_class.return_value = mock_session
-
-    mock_response = Mock()
-    mock_response.status_code = 200
-    mock_response.ok = True
-    mock_response.json.return_value = {"data": "value"}
-    mock_session.request.return_value = mock_response
-
-    config = OpenDotaClientConfig()
-    auth = AuthHandler(api_key="test_key")
-    retry = RetryPolicy(max_retries=0)
-
-    transport = SyncHTTPTransport(config, auth, retry)
-    result = transport.request_json("GET", "/heroStats")
-
-    assert result == {"data": "value"}
-    call_args = mock_session.request.call_args
-    assert call_args[1]["headers"]["X-API-Key"] == "test_key"
-    mock_session.request.assert_called_once()
-
-
-@pytest.mark.parametrize(
-    "exception_class",
-    [
-        niquests.exceptions.ConnectionError,
-        niquests.exceptions.Timeout,
-    ],
-)
-@patch("niquests.Session")
-def test_sync_request_network_errors(mock_session_class, exception_class):
-    """Test sync request raises TransportError on network failures."""
-    mock_session = MagicMock()
-    mock_session_class.return_value = mock_session
-    mock_session.request.side_effect = exception_class("Failed")
-
-    config = OpenDotaClientConfig()
-    auth = AuthHandler(api_key="key")
-    retry = RetryPolicy(max_retries=0)
-
-    transport = SyncHTTPTransport(config, auth, retry)
-
-    with pytest.raises(TransportError):
-        transport.request_json("GET", "/heroStats")
-
-
-@patch("niquests.Session")
-def test_sync_request_json_decode_error(mock_session_class):
-    """Test sync request raises ResponseDecodeError on invalid JSON."""
-    mock_session = MagicMock()
-    mock_session_class.return_value = mock_session
-
-    mock_response = Mock()
-    mock_response.status_code = 200
-    mock_response.ok = True
-    mock_response.json.side_effect = json.JSONDecodeError("error", "", 0)
-    mock_session.request.return_value = mock_response
-
-    config = OpenDotaClientConfig()
-    auth = AuthHandler(api_key="key")
-    retry = RetryPolicy(max_retries=0)
-
-    transport = SyncHTTPTransport(config, auth, retry)
-
-    with pytest.raises(ResponseDecodeError):
-        transport.request_json("GET", "/heroStats")
-
-
-@patch("niquests.Session")
-def test_sync_close(mock_session_class):
-    """Test sync transport close method."""
-    mock_session = MagicMock()
-    mock_session_class.return_value = mock_session
-
-    config = OpenDotaClientConfig()
-    auth = AuthHandler(api_key="key")
-    retry = RetryPolicy()
-
-    transport = SyncHTTPTransport(config, auth, retry)
-    transport.close()
-
-    mock_session.close.assert_called_once()
 
 
 @pytest.mark.asyncio

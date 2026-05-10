@@ -1,4 +1,4 @@
-"""OpenDota SDK - A modern, type-safe Python SDK for the OpenDota API."""
+"""OpenDota SDK - A modern, domain-driven Python SDK for the OpenDota API."""
 
 from opendota_sdk._config import OpenDotaClientConfig, config_from_env, default_config
 from opendota_sdk._errors import (
@@ -8,11 +8,12 @@ from opendota_sdk._errors import (
     ResponseDecodeError,
     TransportError,
 )
-from opendota_sdk.client import OpenDotaAsyncClient, OpenDotaClient
+from opendota_sdk.client import OpenDotaAsyncClient
+from opendota_sdk.constants import ConstantsRegistry
+from opendota_sdk.models import Hero, Item
 
 __version__ = "0.1.0"
 __all__ = [
-    "OpenDotaClient",
     "OpenDotaAsyncClient",
     "OpenDotaClientConfig",
     "OpenDotaError",
@@ -22,4 +23,7 @@ __all__ = [
     "ResponseDecodeError",
     "default_config",
     "config_from_env",
+    "ConstantsRegistry",
+    "Hero",
+    "Item",
 ]
