@@ -1,5 +1,5 @@
-from opendota_sdk.resources.heroes import HeroesAsyncResource
+from opendota_sdk.resources.items import ItemsAsyncResource
 
 __all__ = [
-    "HeroesAsyncResource",
+    "ItemsAsyncResource",
 ]

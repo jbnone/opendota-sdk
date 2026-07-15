@@ -10,7 +10,7 @@ from opendota_sdk._errors import (
 )
 from opendota_sdk.client import OpenDotaAsyncClient
 from opendota_sdk.constants import ConstantsRegistry
-from opendota_sdk.models import Hero, Item
+from opendota_sdk.models import Item
 
 __version__ = "0.1.0"
 __all__ = [
@@ -24,6 +24,5 @@ __all__ = [
     "default_config",
     "config_from_env",
     "ConstantsRegistry",
-    "Hero",
     "Item",
 ]

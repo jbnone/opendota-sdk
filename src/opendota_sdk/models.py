@@ -1,104 +1,119 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
+
+
+class ItemQuality(str, Enum):
+    """Item quality/rarity classification."""
+
+    ARTIFACT = "artifact"
+    COMMON = "common"
+    COMPONENT = "component"
+    CONSUMABLE = "consumable"
+    CONSUMABLE_LANING = "consumable;laning"
+    EPIC = "epic"
+    RARE = "rare"
+    SECRET_SHOP = "secret_shop"
+
+
+class DamageType(str, Enum):
+    """Damage type for item effects."""
+
+    MAGICAL = "Magical"
+    PHYSICAL = "Physical"
+
+
+class Dispellable(str, Enum):
+    """Whether an item effect can be dispelled."""
+
+    YES = "Yes"
+    NO = "No"
+    STRONG_DISPELS_ONLY = "Strong Dispels Only"
+
+
+class ItemAbilityType(str, Enum):
+    """Classification of item abilities."""
+
+    ACTIVE = "active"
+    PASSIVE = "passive"
+    USE = "use"
+    UPGRADE = "upgrade"
+    TOGGLE = "toggle"
+
+
+class ItemTargetTeam(str, Enum):
+    """Classification of item's target team."""
+
+    FRIENDLY = "Friendly"
+    ENEMY = "Enemy"
+    BOTH = "Both"
+
+
+class ItemTargetType(str, Enum):
+    """Classification of item's target type."""
+
+    HERO = "Hero"
+    BASIC = "Basic"
+    TREE = "Tree"
+    BUILDING = "Building"
+
+
+@dataclass
+class ItemAbility:
+    type: ItemAbilityType
+    title: str
+    description: str
+
+
+@dataclass
+class ItemAttribute:
+    key: str
+    value: str
+    display: str | None = field(default=None)
+
+
+class ItemBehavior(str, Enum):
+    AOE = "AOE"
+    CHANNELED = "Channeled"
+    INSTANT_CAST = "Instant Cast"
+    NO_TARGET = "No Target"
+    POINT_TARGET = "Point Target"
+    UNIT_TARGET = "Unit Target"
 
 
 @dataclass
 class Item:
     id: int
     name: str
-    localized_name: str | None = None
-    icon: str | None = None
-    cost: int | None = None
+    image: str
+    cost: int
+    created: bool
+    mana_cost: bool | int
+    health_cost: bool | int
+    cooldown: bool | int
+
+    descriptive_name: str = ""
+    lore: str = ""
+    hints: list[str] = field(default_factory=list)
+    notes: str = ""
+    description: str = ""
+
+    quality: ItemQuality | None = None
+    damage_type: DamageType | None = None
+    dispellable: Dispellable | None = None
+    target_team: ItemTargetTeam | None = None
+    behaviors: bool | list[ItemBehavior] = False
+
+    charges: bool | int = False
+    bkb_pierce: bool | None = None
+    tier: int | None = None
+
+    attributes: list[ItemAttribute] = field(default_factory=list)
+    abilities: list[ItemAbility] = field(default_factory=list)
+    target_types: list[ItemTargetType] = field(default_factory=list)
+    components: list[str] = field(default_factory=list)
+
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
-
-    @classmethod
-    def from_api(cls, raw: dict[str, Any]) -> "Item":
-        return cls(
-            id=int(raw.get("id", 0)),
-            name=raw.get("name", raw.get("dname", "")),
-            localized_name=raw.get("dname", raw.get("name")),
-            icon=raw.get("img"),
-            cost=raw.get("cost"),
-            raw=raw,
-        )
-
-    @classmethod
-    def from_constants(cls, raw: dict[str, Any]) -> "Item":
-        return cls(
-            id=int(raw.get("id", 0)),
-            name=raw.get("name", raw.get("dname", "")),
-            localized_name=raw.get("dname", raw.get("name")),
-            icon=raw.get("img"),
-            cost=raw.get("cost"),
-            raw=raw,
-        )
-
-    def as_dict(self) -> dict[str, Any]:
-        return dict(self.raw)
-
-
-@dataclass
-class Hero:
-    id: int
-    name: str
-    localized_name: str
-    primary_attr: str
-    attack_type: str
-    roles: list[str]
-    legs: int
-    img: str | None = None
-    icon: str | None = None
-    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
-    _loader: Any = field(default=None, repr=False, compare=False)
-
-    @classmethod
-    def from_api(
-        cls,
-        raw: dict[str, Any],
-        constants: dict[str, Any] | None = None,
-        loader: Any | None = None,
-    ) -> "Hero":
-        constants = constants or {}
-        return cls(
-            id=int(raw["id"]),
-            name=raw.get("name", ""),
-            localized_name=raw.get("localized_name", raw.get("name", "")),
-            primary_attr=raw.get("primary_attr", constants.get("primary_attr", "")),
-            attack_type=raw.get("attack_type", constants.get("attack_type", "")),
-            roles=raw.get("roles", constants.get("roles", [])) or [],
-            legs=int(raw.get("legs", constants.get("legs", 0))),
-            img=raw.get("img", constants.get("img")),
-            icon=raw.get("icon", constants.get("icon")),
-            raw={**constants, **raw},
-            _loader=loader,
-        )
-
-    @classmethod
-    def from_constants(cls, raw: dict[str, Any]) -> "Hero":
-        return cls(
-            id=int(raw.get("id", 0)),
-            name=raw.get("name", ""),
-            localized_name=raw.get("localized_name", raw.get("name", "")),
-            primary_attr=raw.get("primary_attr", ""),
-            attack_type=raw.get("attack_type", ""),
-            roles=raw.get("roles", []) or [],
-            legs=int(raw.get("legs", 0)),
-            img=raw.get("img"),
-            icon=raw.get("icon"),
-            raw=raw,
-        )
-
-    def popular_items(self) -> list[Item]:
-        if self._loader is None:
-            raise RuntimeError("Hero loader not configured for related fetches")
-        return self._loader.popular_items(self.id)
-
-    def matchups(self) -> list[dict[str, Any]]:
-        if self._loader is None:
-            raise RuntimeError("Hero loader not configured for related fetches")
-        return self._loader.matchups(self.id)
 
     def as_dict(self) -> dict[str, Any]:
         return dict(self.raw)
