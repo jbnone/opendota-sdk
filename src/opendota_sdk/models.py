@@ -83,6 +83,8 @@ class ItemBehavior(str, Enum):
 
 @dataclass
 class Item:
+    """Dota 2 Item enriched with constants data."""
+
     id: int
     name: str
     image: str
