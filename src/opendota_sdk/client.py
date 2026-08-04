@@ -1,13 +1,15 @@
 """Domain-oriented client interface for the OpenDota API."""
 
+from opendota_sdk import Item
+
 from typing import Any
 
 from opendota_sdk._config import OpenDotaClientConfig
+from opendota_sdk.assembler import Assembler
 from opendota_sdk.constants import ConstantsRegistry
 from opendota_sdk.http._auth import AuthHandler
 from opendota_sdk.http._retry import RetryPolicy
 from opendota_sdk.http._transport import AsyncHTTPTransport
-from opendota_sdk.resources.heroes import HeroesAsyncResource
 
 
 class OpenDotaAsyncClient:
@@ -43,7 +45,16 @@ class OpenDotaAsyncClient:
             retry_policy=self._retry_policy,
         )
         self.constants = ConstantsRegistry(self._transport)
-        self.heroes = HeroesAsyncResource(self._transport, self.constants)
+        self._assembler = Assembler()
+
+    async def get_items(self) -> list[Item]:
+        """Fetch all items from the OpenDota constants endpoint."""
+        raw_items = await self.constants.get_items()
+        items = []
+        for raw_item in raw_items:
+            item = self._assembler.normalize_item(raw_item)
+            items.append(item)
+        return items
 
     async def close(self) -> None:
         await self._transport.close()

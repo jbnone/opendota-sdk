@@ -25,7 +25,7 @@ class ConstantsRegistry:
             self._ids_by_name[name] = item_id
             self._items_by_id[item_id] = data
 
-    async def items(self) -> list[dict[str, Any]]:
+    async def get_items(self) -> list[dict[str, Any]]:
         if not self.item_data_ready:
             await self._fetch_item_data()
         return list(self._items_by_id.values())
