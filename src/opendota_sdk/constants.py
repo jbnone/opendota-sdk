@@ -20,10 +20,10 @@ class ConstantsRegistry:
 
         for name, data in items_data.items():
             item_id = data["id"]
-            data["name"] = name
+            item_data = {**data, "name": name}
 
             self._ids_by_name[name] = item_id
-            self._items_by_id[item_id] = data
+            self._items_by_id[item_id] = item_data
 
     async def get_items(self) -> list[dict[str, Any]]:
         if not self.item_data_ready:
@@ -46,8 +46,8 @@ class ConstantsRegistry:
             return self._items_by_id.get(item_id)
 
         if item_name is not None:
-            item_id = self._ids_by_name.get(item_name)
-            if item_id is not None:
-                return self._items_by_id.get(item_id)
+            resolved_item_id = self._ids_by_name.get(item_name)
+            if resolved_item_id is not None:
+                return self._items_by_id.get(resolved_item_id)
 
         return None

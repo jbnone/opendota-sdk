@@ -9,7 +9,6 @@ from opendota_sdk._errors import (
     TransportError,
 )
 from opendota_sdk.client import OpenDotaAsyncClient
-from opendota_sdk.constants import ConstantsRegistry
 from opendota_sdk.models import Item
 
 __version__ = "0.1.0"
@@ -23,6 +22,5 @@ __all__ = [
     "ResponseDecodeError",
     "default_config",
     "config_from_env",
-    "ConstantsRegistry",
     "Item",
 ]
