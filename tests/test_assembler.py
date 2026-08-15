@@ -14,6 +14,24 @@ from opendota_sdk.models import (
     ItemTargetType,
 )
 
+# Shared falsy-default fields observed on real recipe/token-shaped dotaconstants entries.
+_FALSY_ITEM_DEFAULTS = {
+    "notes": "",
+    "attrib": [],
+    "mc": False,
+    "hc": False,
+    "cd": False,
+    "lore": "",
+    "components": None,
+    "created": False,
+    "charges": False,
+}
+
+
+@pytest.fixture
+def assembler() -> Assembler:
+    return Assembler()
+
 
 def test_item_record_from_raw_preserves_aliases_and_raw_payload():
     raw = {
@@ -40,7 +58,7 @@ def test_item_record_from_raw_preserves_aliases_and_raw_payload():
     assert record.raw == raw
 
 
-def test_normalize_item_builds_typed_item_from_raw_payload():
+def test_normalize_item_builds_typed_item_from_raw_payload(assembler):
     raw = {
         "id": "1",
         "name": "blink",
@@ -79,7 +97,7 @@ def test_normalize_item_builds_typed_item_from_raw_payload():
         "components": ["staff_of_wizardry", None],
     }
 
-    item = Assembler().normalize_item(raw)
+    item = assembler.normalize_item(raw)
 
     assert item.id == 1
     assert item.name == "blink"
@@ -109,8 +127,8 @@ def test_normalize_item_builds_typed_item_from_raw_payload():
     assert item.raw == raw
 
 
-def test_normalize_item_defaults_missing_or_unknown_values():
-    item = Assembler().normalize_item(
+def test_normalize_item_defaults_missing_or_unknown_values(assembler):
+    item = assembler.normalize_item(
         {
             "id": None,
             "name": None,
@@ -271,42 +289,40 @@ def test_item_record_recipe_shaped_payload_has_no_qual_or_abilities():
 
 
 @pytest.mark.parametrize("value", [True, False])
-def test_normalize_bool_passthrough_for_bools(value):
-    assert Assembler()._normalize_bool(value) is value
+def test_normalize_bool_passthrough_for_bools(value, assembler):
+    assert assembler._normalize_bool(value) is value
 
 
 @pytest.mark.parametrize("value", ["yes", "true", "1", "YES", " True "])
-def test_normalize_bool_truthy_strings(value):
-    assert Assembler()._normalize_bool(value) is True
+def test_normalize_bool_truthy_strings(value, assembler):
+    assert assembler._normalize_bool(value) is True
 
 
 @pytest.mark.parametrize("value", ["no", "false", "0", "NO", " False "])
-def test_normalize_bool_falsy_strings(value):
-    assert Assembler()._normalize_bool(value) is False
+def test_normalize_bool_falsy_strings(value, assembler):
+    assert assembler._normalize_bool(value) is False
 
 
 @pytest.mark.parametrize(
     "value,expected", [(1, True), (0, False), (2.0, True), (0.0, False)]
 )
-def test_normalize_bool_numeric_values(value, expected):
-    assert Assembler()._normalize_bool(value) is expected
+def test_normalize_bool_numeric_values(value, expected, assembler):
+    assert assembler._normalize_bool(value) is expected
 
 
-def test_normalize_bool_unrecognized_string_and_none_return_default():
-    assembler = Assembler()
+def test_normalize_bool_unrecognized_string_and_none_return_default(assembler):
     assert assembler._normalize_bool("maybe") is None
     assert assembler._normalize_bool("maybe", default=False) is False
     assert assembler._normalize_bool(None) is None
     assert assembler._normalize_bool(None, default=True) is True
 
 
-def test_normalize_int_none_returns_default():
-    assert Assembler()._normalize_int(None) is None
-    assert Assembler()._normalize_int(None, default=7) == 7
+def test_normalize_int_none_returns_default(assembler):
+    assert assembler._normalize_int(None) is None
+    assert assembler._normalize_int(None, default=7) == 7
 
 
-def test_normalize_int_passthrough_and_coercion():
-    assembler = Assembler()
+def test_normalize_int_passthrough_and_coercion(assembler):
     assert assembler._normalize_int(5) == 5
     assert assembler._normalize_int(3.9) == 3
     assert assembler._normalize_int("42") == 42
@@ -315,8 +331,7 @@ def test_normalize_int_passthrough_and_coercion():
     assert assembler._normalize_int("not a number", default=-1) == -1
 
 
-def test_normalize_bool_or_int_checks_bool_before_int():
-    assembler = Assembler()
+def test_normalize_bool_or_int_checks_bool_before_int(assembler):
     assert assembler._normalize_bool_or_int(True) is True
     assert assembler._normalize_bool_or_int(False) is False
     assert assembler._normalize_bool_or_int(5) == 5
@@ -328,16 +343,14 @@ def test_normalize_bool_or_int_checks_bool_before_int():
     assert assembler._normalize_bool_or_int("garbage", default=False) is False
 
 
-def test_normalize_str_none_passthrough_and_coercion():
-    assembler = Assembler()
+def test_normalize_str_none_passthrough_and_coercion(assembler):
     assert assembler._normalize_str(None) is None
     assert assembler._normalize_str("blink") == "blink"
     assert assembler._normalize_str(42) == "42"
     assert assembler._normalize_str(True) == "True"
 
 
-def test_normalize_enum_exact_match_list_and_invalid():
-    assembler = Assembler()
+def test_normalize_enum_exact_match_list_and_invalid(assembler):
     assert assembler._normalize_enum("Yes", Dispellable) is Dispellable.YES
     assert assembler._normalize_enum(["Unknown", "Yes"], Dispellable) is Dispellable.YES
     assert assembler._normalize_enum(["Unknown", "Also Unknown"], Dispellable) is None
@@ -345,15 +358,13 @@ def test_normalize_enum_exact_match_list_and_invalid():
     assert assembler._normalize_enum(None, Dispellable) is None
 
 
-def test_normalize_str_list_variants():
-    assembler = Assembler()
+def test_normalize_str_list_variants(assembler):
     assert assembler._normalize_str_list(None) == []
     assert assembler._normalize_str_list(["a", None, "b"]) == ["a", "b"]
     assert assembler._normalize_str_list("Friendly") == ["Friendly"]
 
 
-def test_normalize_dict_list_filters_non_dict_entries():
-    assembler = Assembler()
+def test_normalize_dict_list_filters_non_dict_entries(assembler):
     assert assembler._normalize_dict_list("not a list") == []
     assert assembler._normalize_dict_list(
         [{"key": "a"}, "not a dict", {"key": "b"}]
@@ -363,8 +374,8 @@ def test_normalize_dict_list_filters_non_dict_entries():
     ]
 
 
-def test_normalize_attributes_defaults_missing_fields():
-    attributes = Assembler()._normalize_attributes(
+def test_normalize_attributes_defaults_missing_fields(assembler):
+    attributes = assembler._normalize_attributes(
         [{"value": "10"}, {"key": "range", "value": "1200", "display": "Range"}]
     )
 
@@ -374,7 +385,7 @@ def test_normalize_attributes_defaults_missing_fields():
     assert attributes[1].display == "Range"
 
 
-def test_normalize_abilities_covers_all_real_ability_types():
+def test_normalize_abilities_covers_all_real_ability_types(assembler):
     # active/passive/use/upgrade/toggle are all observed in items.json (e.g. rapier's "toggle").
     raw_abilities = [
         {"type": "active", "title": "A", "description": "a"},
@@ -386,7 +397,7 @@ def test_normalize_abilities_covers_all_real_ability_types():
         {"title": "Missing Type"},
     ]
 
-    abilities = Assembler()._normalize_abilities(raw_abilities)
+    abilities = assembler._normalize_abilities(raw_abilities)
 
     assert [ability.type for ability in abilities] == [
         ItemAbilityType.ACTIVE,
@@ -397,108 +408,87 @@ def test_normalize_abilities_covers_all_real_ability_types():
     ]
 
 
-def test_normalize_abilities_defaults_missing_title_and_description():
-    abilities = Assembler()._normalize_abilities([{"type": "active"}])
+def test_normalize_abilities_defaults_missing_title_and_description(assembler):
+    abilities = assembler._normalize_abilities([{"type": "active"}])
     assert abilities[0].title == ""
     assert abilities[0].description == ""
 
 
-def test_normalize_behaviors_bool_passthrough():
-    assembler = Assembler()
-    assert assembler._normalize_behaviors(True) is True
-    assert assembler._normalize_behaviors(False) is False
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (True, True),
+        (False, False),
+        ("Point Target", [ItemBehavior.POINT_TARGET]),
+        (
+            "Point Target, Instant Cast",
+            [ItemBehavior.POINT_TARGET, ItemBehavior.INSTANT_CAST],
+        ),
+        # Real shape (e.g. faerie_fire): behavior as a JSON list of strings, not a comma string.
+        (
+            ["Instant Cast", "No Target"],
+            [ItemBehavior.INSTANT_CAST, ItemBehavior.NO_TARGET],
+        ),
+        ([], False),
+    ],
+)
+def test_normalize_behaviors_variants(value, expected, assembler):
+    assert assembler._normalize_behaviors(value) == expected
 
 
-def test_normalize_behaviors_single_string():
-    assert Assembler()._normalize_behaviors("Point Target") == [
-        ItemBehavior.POINT_TARGET
-    ]
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("Friendly", ItemTargetTeam.FRIENDLY),
+        # Real value from ethereal_blade: only "Enemy" is captured, "Friendly" is silently dropped.
+        (["Enemy", "Friendly"], ItemTargetTeam.ENEMY),
+        ([], None),
+        ("Both", ItemTargetTeam.BOTH),
+    ],
+)
+def test_normalize_target_team_variants(value, expected, assembler):
+    assert assembler._normalize_target_team(value) is expected
 
 
-def test_normalize_behaviors_comma_separated_string():
-    behaviors = Assembler()._normalize_behaviors("Point Target, Instant Cast")
-    assert behaviors == [ItemBehavior.POINT_TARGET, ItemBehavior.INSTANT_CAST]
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("Hero", [ItemTargetType.HERO]),
+        ([], []),
+    ],
+)
+def test_normalize_target_types_variants(value, expected, assembler):
+    assert assembler._normalize_target_types(value) == expected
 
 
-def test_normalize_behaviors_real_data_list_of_strings():
-    # Real shape (e.g. faerie_fire): behavior as a JSON list of strings, not a comma string.
-    behaviors = Assembler()._normalize_behaviors(["Instant Cast", "No Target"])
-    assert behaviors == [ItemBehavior.INSTANT_CAST, ItemBehavior.NO_TARGET]
-
-
-def test_normalize_behaviors_empty_list_falls_back_to_false():
-    assert Assembler()._normalize_behaviors([]) is False
-
-
-def test_normalize_target_team_bare_string():
-    assert Assembler()._normalize_target_team("Friendly") is ItemTargetTeam.FRIENDLY
-
-
-def test_normalize_target_team_real_two_element_list_uses_first_entry_only():
-    # Real value from ethereal_blade: only "Enemy" is captured, "Friendly" is silently dropped.
-    assert (
-        Assembler()._normalize_target_team(["Enemy", "Friendly"])
-        is ItemTargetTeam.ENEMY
-    )
-
-
-def test_normalize_target_team_empty_list_returns_none():
-    assert Assembler()._normalize_target_team([]) is None
-
-
-def test_normalize_target_team_both_literal_value():
-    assert Assembler()._normalize_target_team("Both") is ItemTargetTeam.BOTH
-
-
-def test_normalize_target_types_bare_string():
-    assert Assembler()._normalize_target_types("Hero") == [ItemTargetType.HERO]
-
-
-def test_normalize_target_types_empty_list():
-    assert Assembler()._normalize_target_types([]) == []
-
-
-def test_normalize_components_none_and_filters_none_entries():
-    assembler = Assembler()
-    assert assembler._normalize_components(None) == []
-    assert assembler._normalize_components(["blink", None, "reaver"]) == [
-        "blink",
-        "reaver",
-    ]
-
-
-def test_normalize_components_preserves_literal_empty_string_entries():
-    # Real items (pipe, urn_of_shadows, hydras_breath) have a literal "" entry;
-    # only None is filtered, "" passes through as documented current behavior.
-    assert Assembler()._normalize_components(["ring_of_tarrasque", "cloak", ""]) == [
-        "ring_of_tarrasque",
-        "cloak",
-        "",
-    ]
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (None, []),
+        (["blink", None, "reaver"], ["blink", "reaver"]),
+        # Real items (pipe, urn_of_shadows, hydras_breath) have a literal "" entry;
+        # only None is filtered, "" passes through as documented current behavior.
+        (["ring_of_tarrasque", "cloak", ""], ["ring_of_tarrasque", "cloak", ""]),
+    ],
+)
+def test_normalize_components_variants(value, expected, assembler):
+    assert assembler._normalize_components(value) == expected
 
 
 # --- Phase C: Assembler.normalize_item end-to-end contract --------------------------
 
 
-def test_normalize_item_recipe_shaped_payload_defaults():
+def test_normalize_item_recipe_shaped_payload_defaults(assembler):
     raw = {
+        **_FALSY_ITEM_DEFAULTS,
         "id": 606,
         "name": "recipe_arcane_blink",
         "dname": "Arcane Blink Recipe",
         "cost": 1750,
         "behavior": False,
-        "notes": "",
-        "attrib": [],
-        "mc": False,
-        "hc": False,
-        "cd": False,
-        "lore": "",
-        "components": None,
-        "created": False,
-        "charges": False,
     }
 
-    item = Assembler().normalize_item(raw)
+    item = assembler.normalize_item(raw)
 
     assert item.quality is None
     assert item.abilities == []
@@ -506,8 +496,9 @@ def test_normalize_item_recipe_shaped_payload_defaults():
     assert item.components == []
 
 
-def test_normalize_item_handles_keys_missing_entirely_not_just_null():
+def test_normalize_item_handles_keys_missing_entirely_not_just_null(assembler):
     # recipe_iron_talon-shaped: hc and charges keys are entirely absent, not explicit null.
+    # (Intentionally not built from _FALSY_ITEM_DEFAULTS: it must omit hc/charges, not set them.)
     raw = {
         "id": 238,
         "name": "recipe_iron_talon",
@@ -523,31 +514,23 @@ def test_normalize_item_handles_keys_missing_entirely_not_just_null():
         "created": False,
     }
 
-    item = Assembler().normalize_item(raw)
+    item = assembler.normalize_item(raw)
 
     assert item.health_cost is False
     assert item.charges is False
 
 
-def test_normalize_item_neutral_token_null_cost_and_absent_quality():
+def test_normalize_item_neutral_token_null_cost_and_absent_quality(assembler):
     raw = {
+        **_FALSY_ITEM_DEFAULTS,
         "id": 2091,
         "name": "tier1_token",
         "dname": "Tier 1 Token",
         "cost": None,
         "behavior": "No Target",
-        "notes": "",
-        "attrib": [],
-        "mc": False,
-        "hc": False,
-        "cd": False,
-        "lore": "",
-        "components": None,
-        "created": False,
-        "charges": False,
     }
 
-    item = Assembler().normalize_item(raw)
+    item = assembler.normalize_item(raw)
 
     assert item.cost == 0
     assert item.quality is None
@@ -563,15 +546,15 @@ def test_normalize_item_neutral_token_null_cost_and_absent_quality():
         ("miniboss_minion_summoner", "Miniboss Minion Summoner"),
     ],
 )
-def test_normalize_item_humanizes_name_when_dname_is_absent(name, expected):
-    item = Assembler().normalize_item({"id": 1, "name": name, "cost": 0})
+def test_normalize_item_humanizes_name_when_dname_is_absent(name, expected, assembler):
+    item = assembler.normalize_item({"id": 1, "name": name, "cost": 0})
 
     assert item.name == expected
     assert item.descriptive_name == ""
 
 
-def test_normalize_item_name_unaffected_when_dname_present():
-    item = Assembler().normalize_item(
+def test_normalize_item_name_unaffected_when_dname_present(assembler):
+    item = assembler.normalize_item(
         {"id": 1, "name": "blink", "dname": "Blink Dagger", "cost": 2250}
     )
 
@@ -579,16 +562,16 @@ def test_normalize_item_name_unaffected_when_dname_present():
     assert item.descriptive_name == "Blink Dagger"
 
 
-def test_normalize_item_consumable_laning_quality():
-    item = Assembler().normalize_item(
+def test_normalize_item_consumable_laning_quality(assembler):
+    item = assembler.normalize_item(
         {"id": 218, "name": "ward_dispenser", "qual": "consumable;laning", "cost": 50}
     )
 
     assert item.quality is ItemQuality.CONSUMABLE_LANING
 
 
-def test_normalize_item_target_team_and_target_type_as_bare_strings():
-    item = Assembler().normalize_item(
+def test_normalize_item_target_team_and_target_type_as_bare_strings(assembler):
+    item = assembler.normalize_item(
         {
             "id": 4,
             "name": "chainmail",
@@ -603,8 +586,8 @@ def test_normalize_item_target_team_and_target_type_as_bare_strings():
     assert item.target_types == [ItemTargetType.HERO]
 
 
-def test_normalize_item_target_type_multi_value_list_retains_order():
-    item = Assembler().normalize_item(
+def test_normalize_item_target_type_multi_value_list_retains_order(assembler):
+    item = assembler.normalize_item(
         {
             "id": 1123,
             "name": "blood_grenade",
@@ -618,8 +601,8 @@ def test_normalize_item_target_type_multi_value_list_retains_order():
     assert item.target_types == [ItemTargetType.HERO, ItemTargetType.BASIC]
 
 
-def test_normalize_item_strong_dispels_only():
-    item = Assembler().normalize_item(
+def test_normalize_item_strong_dispels_only(assembler):
+    item = assembler.normalize_item(
         {
             "id": 96,
             "name": "sheepstick",
@@ -633,8 +616,10 @@ def test_normalize_item_strong_dispels_only():
 
 
 @pytest.mark.parametrize("quality_value", [quality.value for quality in ItemQuality])
-def test_normalize_item_resolves_every_item_quality_enum_value(quality_value):
-    item = Assembler().normalize_item(
+def test_normalize_item_resolves_every_item_quality_enum_value(
+    quality_value, assembler
+):
+    item = assembler.normalize_item(
         {
             "id": 1,
             "name": "test_item",
@@ -647,17 +632,17 @@ def test_normalize_item_resolves_every_item_quality_enum_value(quality_value):
     assert item.quality is ItemQuality(quality_value)
 
 
-def test_item_raw_excluded_from_equality_and_repr():
+def test_item_raw_excluded_from_equality_and_repr(assembler):
     base = {"id": 1, "name": "blink", "dname": "Blink Dagger", "cost": 2250}
-    item_a = Assembler().normalize_item({**base, "raw_marker": "a"})
-    item_b = Assembler().normalize_item({**base, "raw_marker": "b"})
+    item_a = assembler.normalize_item({**base, "raw_marker": "a"})
+    item_b = assembler.normalize_item({**base, "raw_marker": "b"})
 
     assert item_a == item_b
     assert "raw=" not in repr(item_a)
 
 
-def test_item_as_dict_returns_a_copy_of_raw():
-    item = Assembler().normalize_item(
+def test_item_as_dict_returns_a_copy_of_raw(assembler):
+    item = assembler.normalize_item(
         {"id": 1, "name": "blink", "dname": "Blink Dagger", "cost": 2250}
     )
 
@@ -667,13 +652,12 @@ def test_item_as_dict_returns_a_copy_of_raw():
     assert "mutated" not in item.raw
 
 
-def test_normalize_record_delegates_to_item_record_from_raw():
+def test_normalize_record_delegates_to_item_record_from_raw(assembler):
     raw = {"id": 1, "name": "blink"}
-    assert Assembler().normalize_record(raw) == ItemRecord.from_raw(raw)
+    assert assembler.normalize_record(raw) == ItemRecord.from_raw(raw)
 
 
-def test_list_items_preserves_order_and_count_for_mixed_input():
-    assembler = Assembler()
+def test_list_items_preserves_order_and_count_for_mixed_input(assembler):
     raw_dict = {"id": 1, "name": "blink", "dname": "Blink Dagger"}
     raw_record = ItemRecord.from_raw({"id": 2, "name": "reaver", "dname": "Reaver"})
 
@@ -683,17 +667,16 @@ def test_list_items_preserves_order_and_count_for_mixed_input():
     assert [item.name for item in items] == ["blink", "reaver"]
 
 
-def test_get_item_is_equivalent_to_normalize_item():
-    assembler = Assembler()
+def test_get_item_is_equivalent_to_normalize_item(assembler):
     raw = {"id": 1, "name": "blink", "dname": "Blink Dagger"}
 
     assert assembler.get_item(raw) == assembler.normalize_item(raw)
 
 
-def test_normalize_item_accepts_pre_built_item_record_directly():
+def test_normalize_item_accepts_pre_built_item_record_directly(assembler):
     record = ItemRecord(id=99, name="custom", dname="Custom Item", raw={"custom": True})
 
-    item = Assembler().normalize_item(record)
+    item = assembler.normalize_item(record)
 
     assert item.id == 99
     assert item.descriptive_name == "Custom Item"
