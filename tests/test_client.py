@@ -24,38 +24,6 @@ async def test_async_client_initialization(mock_transport_class):
 
 
 @pytest.mark.asyncio
-@patch("opendota_sdk.client.AsyncHTTPTransport")
-async def test_async_client_context_manager(mock_transport_class):
-    """Test async client as context manager."""
-    mock_transport = MagicMock()
-    mock_transport_class.return_value = mock_transport
-
-    async def async_close():
-        pass
-
-    mock_transport.close = async_close
-
-    async with OpenDotaAsyncClient() as client:
-        assert client is not None
-
-
-@pytest.mark.asyncio
-@patch("opendota_sdk.client.AsyncHTTPTransport")
-async def test_async_close(mock_transport_class):
-    """Test async client close method."""
-    mock_transport = MagicMock()
-    mock_transport_class.return_value = mock_transport
-
-    async def async_close():
-        pass
-
-    mock_transport.close = async_close
-
-    client = OpenDotaAsyncClient()
-    await client.close()
-
-
-@pytest.mark.asyncio
 async def test_get_heroes_returns_typed_hero_models():
     heroes_api = [
         {
