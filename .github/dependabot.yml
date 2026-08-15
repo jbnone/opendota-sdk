@@ -4,28 +4,6 @@ updates:
   - package-ecosystem: "uv"
     directory: "/"
 
-    allow:
-      - dependency-type: "production"
-
-    schedule:
-      interval: "weekly"
-
-    cooldown:
-      default-days: 1
-
-    commit-message:
-      prefix: "deps"
-
-    labels:
-      - "dependencies"
-      - "automated"
-
-  - package-ecosystem: "uv"
-    directory: "/"
-
-    allow:
-      - dependency-type: "development"
-
     schedule:
       interval: "monthly"
 
@@ -34,6 +12,7 @@ updates:
 
     commit-message:
       prefix: "deps"
+      include: "scope"
 
     labels:
       - "dependencies"
@@ -43,7 +22,7 @@ updates:
     directory: "/"
 
     schedule:
-      interval: "weekly"
+      interval: "monthly"
 
     commit-message:
       prefix: "ci"
