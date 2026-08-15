@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from opendota_sdk.client import OpenDotaAsyncClient
 from opendota_sdk._config import OpenDotaClientConfig
 from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttr, HeroRole
-from opendota_sdk.models import Hero
+from opendota_sdk.models import Hero, Item
 
 
 @pytest.mark.asyncio
@@ -108,3 +108,58 @@ async def test_get_heroes_returns_typed_hero_models():
     assert isinstance(heroes[0], Hero)
     assert heroes[0].localized_name == "Anti-Mage"
     assert heroes[0].img == "/apps/dota2/images/heroes/antimage_full.png"
+
+
+@pytest.mark.asyncio
+async def test_get_items_returns_typed_item_models():
+    raw_items = [
+        {"id": 1, "name": "blink", "dname": "Blink Dagger", "cost": 2250},
+        {
+            "id": 606,
+            "name": "recipe_arcane_blink",
+            "dname": "Arcane Blink Recipe",
+            "cost": 1750,
+            "behavior": False,
+        },
+    ]
+
+    async with OpenDotaAsyncClient() as client:
+        client._constants.get_items = AsyncMock(return_value=raw_items)
+
+        items = await client.get_items()
+
+    assert len(items) == 2
+    assert all(isinstance(item, Item) for item in items)
+    assert items[0].name == "blink"
+    assert items[0].descriptive_name == "Blink Dagger"
+
+
+@pytest.mark.asyncio
+async def test_get_items_calls_constants_registry_exactly_once():
+    async with OpenDotaAsyncClient() as client:
+        client._constants.get_items = AsyncMock(return_value=[])
+
+        await client.get_items()
+
+        client._constants.get_items.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_items_end_to_end_with_real_constants_registry_and_assembler():
+    raw_items_payload = {
+        "blink": {"id": 1, "dname": "Blink Dagger", "cost": 2250},
+        "recipe_arcane_blink": {
+            "id": 606,
+            "dname": "Arcane Blink Recipe",
+            "cost": 1750,
+            "behavior": False,
+        },
+    }
+
+    async with OpenDotaAsyncClient() as client:
+        client._transport.request_json = AsyncMock(return_value=raw_items_payload)
+
+        items = await client.get_items()
+
+    assert len(items) == 2
+    assert {item.name for item in items} == {"blink", "recipe_arcane_blink"}

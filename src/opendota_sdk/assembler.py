@@ -31,18 +31,22 @@ class Assembler:
         else:
             record = ItemRecord.from_raw(raw)
 
+        descriptive_name = self._normalize_str(record.dname) or ""
+        name = self._normalize_str(record.name) or descriptive_name or ""
+        if not descriptive_name:
+            # dotaconstants omits dname for some items; humanize the slug instead of exposing it raw.
+            name = self._humanize_slug(name)
+
         return Item(
             id=self._require_int(record.id),
-            name=self._normalize_str(record.name)
-            or self._normalize_str(record.dname)
-            or "",
+            name=name,
             image=self._normalize_str(record.img) or "",
             cost=self._require_int(record.cost),
             created=self._require_bool(record.created),
             mana_cost=self._require_bool_or_int(record.mc),
             health_cost=self._require_bool_or_int(record.hc),
             cooldown=self._require_bool_or_int(record.cd),
-            descriptive_name=self._normalize_str(record.dname) or "",
+            descriptive_name=descriptive_name,
             lore=self._normalize_str(record.lore) or "",
             hints=self._normalize_str_list(record.hint),
             notes=self._normalize_str(record.notes) or "",
@@ -142,6 +146,9 @@ class Assembler:
         if isinstance(value, str):
             return value
         return str(value)
+
+    def _humanize_slug(self, slug: str) -> str:
+        return slug.replace("_", " ").title()
 
     def _normalize_enum(self, value: Any, enum_type: type[E]) -> E | None:
         if value is None:
