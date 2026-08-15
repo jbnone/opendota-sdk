@@ -1,11 +1,23 @@
 """Shared fixtures for opendota-sdk tests."""
 
-import pytest
+import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from opendota_sdk._config import OpenDotaClientConfig
 from opendota_sdk.http._auth import AuthHandler
 from opendota_sdk.http._retry import RetryPolicy
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+@pytest.fixture(scope="session")
+def real_items_json() -> dict:
+    """Real dotaconstants items payload (tests/fixtures/items.json), shared across item-slice tests."""
+    with (FIXTURES_DIR / "items.json").open(encoding="utf-8") as handle:
+        return json.load(handle)
 
 
 @pytest.fixture
