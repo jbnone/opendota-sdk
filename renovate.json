@@ -1,6 +1,34 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    "schedule:monthly"
+  ],
+  "abandonmentThreshold": "1 year",
+  "addLabels": ["dependencies", "automated"],
+  "configMigration": true,
+  "packageRules": [
+    {
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["project.dependencies", "build-system.requires"],
+      "commitMessagePrefix": "deps(deps):",
+      "minimumReleaseAge": "1 day"
+    },
+    {
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["dependency-groups"],
+      "commitMessagePrefix": "deps(deps-dev):",
+      "minimumReleaseAge": "1 day",
+      "schedule": ["before 4am on monday"],
+      "automerge": true,
+      "platformAutomerge": true
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "commitMessagePrefix": "ci:",
+      "schedule": ["before 4am on monday"],
+      "automerge": true,
+      "platformAutomerge": true
+    }
   ]
 }
