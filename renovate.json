@@ -7,17 +7,27 @@
   "abandonmentThreshold": "1 year",
   "addLabels": ["dependencies", "automated"],
   "configMigration": true,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^prek\\.toml$/"],
+      "matchStrings": [
+        "repo = \"https://github\\.com/(?<depName>[^\"]+)\"\\s*\\nrev = \"(?<currentValue>[^\"]+)\""
+      ],
+      "datasourceTemplate": "github-tags"
+    }
+  ],
   "packageRules": [
     {
       "matchManagers": ["pep621"],
       "matchDepTypes": ["project.dependencies", "build-system.requires"],
-      "commitMessagePrefix": "deps(deps):",
+      "commitMessagePrefix": "deps(main):",
       "minimumReleaseAge": "1 day"
     },
     {
       "matchManagers": ["pep621"],
       "matchDepTypes": ["dependency-groups"],
-      "commitMessagePrefix": "deps(deps-dev):",
+      "commitMessagePrefix": "deps(dev):",
       "minimumReleaseAge": "1 day",
       "schedule": ["before 4am on monday"],
       "automerge": true,
@@ -26,6 +36,13 @@
     {
       "matchManagers": ["github-actions"],
       "commitMessagePrefix": "ci:",
+      "schedule": ["before 4am on monday"],
+      "automerge": true,
+      "platformAutomerge": true
+    },
+    {
+      "matchManagers": ["custom.regex"],
+      "commitMessagePrefix": "deps(dev):",
       "schedule": ["before 4am on monday"],
       "automerge": true,
       "platformAutomerge": true
