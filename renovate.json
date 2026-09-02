@@ -31,21 +31,24 @@
       "minimumReleaseAge": "1 day",
       "schedule": ["before 4am on monday"],
       "automerge": true,
-      "platformAutomerge": true
+      "platformAutomerge": true,
+      "addLabels": ["automerge"]
     },
     {
       "matchManagers": ["github-actions"],
       "commitMessagePrefix": "ci:",
       "schedule": ["before 4am on monday"],
       "automerge": true,
-      "platformAutomerge": true
+      "platformAutomerge": true,
+      "addLabels": ["automerge"]
     },
     {
       "matchManagers": ["custom.regex"],
       "commitMessagePrefix": "deps(dev):",
       "schedule": ["before 4am on monday"],
       "automerge": true,
-      "platformAutomerge": true
+      "platformAutomerge": true,
+      "addLabels": ["automerge"]
     }
   ]
 }
