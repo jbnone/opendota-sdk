@@ -338,12 +338,11 @@ class Assembler:
         attributes: list[Attribute] = []
         for entry in self._normalize_dict_list(value):
             raw_value = entry.get("value", "")
+            values = raw_value if isinstance(raw_value, list) else [raw_value]
             attributes.append(
                 Attribute(
                     key=str(entry.get("key", "")),
-                    value=[str(item) for item in raw_value]
-                    if isinstance(raw_value, list)
-                    else str(raw_value),
+                    value=[str(item) for item in values],
                     display=entry.get("display", entry.get("header")),
                     generated=bool(entry.get("generated", False)),
                 )

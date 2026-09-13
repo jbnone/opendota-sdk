@@ -134,7 +134,7 @@ def test_normalize_item_builds_typed_item_from_raw_payload(assembler):
     assert item.black_king_bar_pierce is False
     assert item.tier == 1
     assert item.attributes[0].key == "blink_range"
-    assert item.attributes[0].value == "1200"
+    assert item.attributes[0].value == ["1200"]
     assert len(item.abilities) == 1
     assert item.abilities[0].type is ItemAbilityType.ACTIVE
     assert item.target_types == [ItemTargetType.HERO, ItemTargetType.TREE]
@@ -395,7 +395,7 @@ def test_normalize_attributes_defaults_missing_fields(assembler):
     )
 
     assert attributes[0].key == ""
-    assert attributes[0].value == "10"
+    assert attributes[0].value == ["10"]
     assert attributes[0].display is None
     assert attributes[1].display == "Range"
 
@@ -788,7 +788,7 @@ def test_normalize_hero_ability_resolves_header_list_values_and_generated_flag(
     assert ability.title == "Berserker's Call"
     assert ability.behaviors == [AbilityBehavior.NO_TARGET]
     assert ability.attributes[0].display == "RADIUS:"
-    assert ability.attributes[0].value == "315"
+    assert ability.attributes[0].value == ["315"]
     assert ability.attributes[1].value == ["12", "13", "14", "15"]
     assert ability.attributes[1].generated is False
     assert ability.attributes[2].generated is True

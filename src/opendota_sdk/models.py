@@ -74,7 +74,8 @@ class Attribute:
     """A labeled key/value tooltip stat, shared by item and ability data."""
 
     key: str
-    value: str | list[str]
+    # Per-level values; a single-element list means the stat is flat (no level scaling).
+    value: list[str]
     display: str | None = field(default=None)
     generated: bool = False
 
