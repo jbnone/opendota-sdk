@@ -6,7 +6,7 @@ from typing import Any, TypeVar
 
 from opendota_sdk._errors import OpenDotaError
 from opendota_sdk._records import ItemRecord
-from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttr, HeroRole
+from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttribute, HeroRole
 from opendota_sdk.models import (
     AbilityBehavior,
     Attribute,
@@ -62,7 +62,7 @@ class Assembler:
             target_team=self._normalize_target_team(record.target_team),
             behaviors=self._normalize_behaviors(record.behavior),
             charges=self._require_bool_or_int(record.charges),
-            bkb_pierce=self._normalize_bool(record.bkbpierce),
+            black_king_bar_pierce=self._normalize_bool(record.bkbpierce),
             tier=self._normalize_int(record.tier),
             attributes=self._normalize_attributes(record.attrib),
             abilities=self._normalize_abilities(record.abilities),
@@ -143,13 +143,15 @@ class Assembler:
         hero_id = self._normalize_int(merged.get("id"))
         name = self._normalize_str(merged.get("name"))
         localized_name = self._normalize_str(merged.get("localized_name"))
-        primary_attr = self._normalize_enum(merged.get("primary_attr"), HeroPrimaryAttr)
+        primary_attribute = self._normalize_enum(
+            merged.get("primary_attr"), HeroPrimaryAttribute
+        )
         attack_type = self._normalize_enum(merged.get("attack_type"), HeroAttackType)
         if (
             hero_id is None
             or not name
             or not localized_name
-            or primary_attr is None
+            or primary_attribute is None
             or attack_type is None
         ):
             raise OpenDotaError(
@@ -173,34 +175,34 @@ class Assembler:
             id=hero_id,
             name=name,
             localized_name=localized_name,
-            primary_attr=primary_attr,
+            primary_attribute=primary_attribute,
             attack_type=attack_type,
             roles=self._normalize_enum_list(merged.get("roles"), HeroRole),
             legs=self._require_int(merged.get("legs")),
-            img=self._normalize_str(merged.get("img")) or "",
+            image=self._normalize_str(merged.get("img")) or "",
             icon=self._normalize_str(merged.get("icon")) or "",
             base_health=self._require_int(merged.get("base_health")),
             base_health_regen=self._require_float(merged.get("base_health_regen")),
             base_mana=self._require_int(merged.get("base_mana")),
             base_mana_regen=self._require_float(merged.get("base_mana_regen")),
             base_armor=self._require_float(merged.get("base_armor")),
-            base_mr=self._require_int(merged.get("base_mr")),
+            base_magic_resistance=self._require_int(merged.get("base_mr")),
             base_attack_min=self._require_int(merged.get("base_attack_min")),
             base_attack_max=self._require_int(merged.get("base_attack_max")),
             base_attack_time=self._require_int(merged.get("base_attack_time")),
-            base_str=self._require_int(merged.get("base_str")),
-            base_agi=self._require_int(merged.get("base_agi")),
-            base_int=self._require_int(merged.get("base_int")),
-            str_gain=self._require_float(merged.get("str_gain")),
-            agi_gain=self._require_float(merged.get("agi_gain")),
-            int_gain=self._require_float(merged.get("int_gain")),
+            base_strength=self._require_int(merged.get("base_str")),
+            base_agility=self._require_int(merged.get("base_agi")),
+            base_intelligence=self._require_int(merged.get("base_int")),
+            strength_gain=self._require_float(merged.get("str_gain")),
+            agility_gain=self._require_float(merged.get("agi_gain")),
+            intelligence_gain=self._require_float(merged.get("int_gain")),
             attack_point=self._require_float(merged.get("attack_point")),
             attack_range=self._require_int(merged.get("attack_range")),
             projectile_speed=self._require_int(merged.get("projectile_speed")),
             attack_rate=self._require_float(merged.get("attack_rate")),
             move_speed=self._require_int(merged.get("move_speed")),
             turn_rate=self._normalize_float(merged.get("turn_rate")),
-            cm_enabled=self._require_bool(merged.get("cm_enabled")),
+            captains_mode_enabled=self._require_bool(merged.get("cm_enabled")),
             day_vision=self._require_int(merged.get("day_vision")),
             night_vision=self._require_int(merged.get("night_vision")),
             abilities=abilities,

@@ -7,7 +7,7 @@ import pytest
 from opendota_sdk._config import OpenDotaClientConfig
 from opendota_sdk._errors import OpenDotaError
 from opendota_sdk.client import OpenDotaAsyncClient
-from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttr, HeroRole
+from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttribute, HeroRole
 from opendota_sdk.models import AbilityBehavior, Hero, HeroTalent, Item
 
 
@@ -117,8 +117,8 @@ async def test_get_heroes_returns_typed_hero_models():
     hero = heroes[0]
     assert isinstance(hero, Hero)
     assert hero.localized_name == "Anti-Mage"
-    assert hero.img == "/apps/dota2/images/heroes/antimage_full.png"
-    assert hero.primary_attr is HeroPrimaryAttr.AGI
+    assert hero.image == "/apps/dota2/images/heroes/antimage_full.png"
+    assert hero.primary_attribute is HeroPrimaryAttribute.AGILITY
     assert hero.attack_type is HeroAttackType.MELEE
     assert hero.roles == [HeroRole.CARRY, HeroRole.ESCAPE]
     assert all(isinstance(role, HeroRole) for role in hero.roles)

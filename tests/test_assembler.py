@@ -5,7 +5,7 @@ import pytest
 from opendota_sdk._errors import OpenDotaError
 from opendota_sdk._records import ItemRecord
 from opendota_sdk.assembler import Assembler
-from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttr, HeroRole
+from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttribute, HeroRole
 from opendota_sdk.models import (
     AbilityBehavior,
     DamageType,
@@ -131,7 +131,7 @@ def test_normalize_item_builds_typed_item_from_raw_payload(assembler):
         AbilityBehavior.INSTANT_CAST,
     ]
     assert item.charges == 0
-    assert item.bkb_pierce is False
+    assert item.black_king_bar_pierce is False
     assert item.tier == 1
     assert item.attributes[0].key == "blink_range"
     assert item.attributes[0].value == "1200"
@@ -701,7 +701,7 @@ def test_normalize_item_accepts_pre_built_item_record_directly(assembler):
 def test_normalize_hero_coerces_enum_fields_from_raw_strings(assembler):
     hero = assembler.normalize_hero(_MINIMAL_HERO_PAYLOAD)
 
-    assert hero.primary_attr is HeroPrimaryAttr.AGI
+    assert hero.primary_attribute is HeroPrimaryAttribute.AGILITY
     assert hero.attack_type is HeroAttackType.MELEE
     assert hero.roles == [HeroRole.CARRY, HeroRole.ESCAPE]
     assert all(isinstance(role, HeroRole) for role in hero.roles)
@@ -713,7 +713,7 @@ def test_normalize_hero_defaults_missing_optional_numeric_fields(assembler):
     assert hero.base_health == 0
     assert hero.base_health_regen == 0.0
     assert hero.turn_rate is None
-    assert hero.cm_enabled is False
+    assert hero.captains_mode_enabled is False
     assert hero.roles == [HeroRole.CARRY, HeroRole.ESCAPE]
 
 

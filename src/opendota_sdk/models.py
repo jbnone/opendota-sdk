@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttr, HeroRole
+from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttribute, HeroRole
 
 
 class ItemQuality(str, Enum):
@@ -62,6 +62,8 @@ class ItemTargetType(str, Enum):
 
 @dataclass
 class ItemAbility:
+    """An effect an item itself grants."""
+
     type: ItemAbilityType
     title: str
     description: str
@@ -80,7 +82,7 @@ class Attribute:
 class AbilityBehavior(str, Enum):
     """How an ability casts, shared by item-granted and hero-innate abilities."""
 
-    AOE = "AOE"
+    AREA_OF_EFFECT = "AOE"
     CHANNELED = "Channeled"
     HIDDEN = "Hidden"
     INSTANT_CAST = "Instant Cast"
@@ -116,7 +118,8 @@ class Item:
     behaviors: bool | list[AbilityBehavior] = False
 
     charges: bool | int = False
-    bkb_pierce: bool | None = None
+    # Whether the item's effect pierces Black King Bar's spell-immunity.
+    black_king_bar_pierce: bool | None = None
     tier: int | None = None
 
     attributes: list[Attribute] = field(default_factory=list)
@@ -154,37 +157,43 @@ class HeroAbility:
 
 @dataclass
 class Hero:
+    """Dota 2 Hero enriched with constants, abilities, talents, and lore."""
+
     id: int
     name: str
     localized_name: str
-    primary_attr: HeroPrimaryAttr
+    primary_attribute: HeroPrimaryAttribute
     attack_type: HeroAttackType
     roles: list[HeroRole]
+    # Number of legs the hero's model has, used by the game engine for gait/animation.
     legs: int
-    img: str
+    image: str
     icon: str
     base_health: int
     base_health_regen: float
     base_mana: int
     base_mana_regen: float
     base_armor: float
-    base_mr: int
+    base_magic_resistance: int
     base_attack_min: int
     base_attack_max: int
     base_attack_time: int
-    base_str: int
-    base_agi: int
-    base_int: int
-    str_gain: float
-    agi_gain: float
-    int_gain: float
+    base_strength: int
+    base_agility: int
+    base_intelligence: int
+    strength_gain: float
+    agility_gain: float
+    intelligence_gain: float
+    # Delay (in seconds) between starting an attack and its damage/effect landing.
     attack_point: float
     attack_range: int
     projectile_speed: int
     attack_rate: float
     move_speed: int
+    # How many degrees per second the hero can rotate to face a new direction.
     turn_rate: float | None
-    cm_enabled: bool
+    # Whether the hero is enabled in Captains Mode (the competitive draft format).
+    captains_mode_enabled: bool
     day_vision: int
     night_vision: int
 

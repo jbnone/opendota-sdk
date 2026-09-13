@@ -2,6 +2,8 @@ from enum import StrEnum
 
 
 class HeroRole(StrEnum):
+    """A hero's suggested in-game role(s), as classified by dotaconstants."""
+
     CARRY = "Carry"
     SUPPORT = "Support"
     NUKER = "Nuker"
@@ -9,16 +11,20 @@ class HeroRole(StrEnum):
     JUNGLER = "Jungler"
     DURABLE = "Durable"
     ESCAPE = "Escape"
-    Pusher = "Pusher"
+    PUSHER = "Pusher"
 
 
 class HeroAttackType(StrEnum):
+    """Whether a hero attacks at melee or ranged distance."""
+
     MELEE = "Melee"
     RANGED = "Ranged"
 
 
-class HeroPrimaryAttr(StrEnum):
-    STR = "str"
-    AGI = "agi"
-    INT = "int"
+class HeroPrimaryAttribute(StrEnum):
+    """A hero's primary stat, which scales their damage output."""
+
+    STRENGTH = "str"
+    AGILITY = "agi"
+    INTELLIGENCE = "int"
     ALL = "all"
