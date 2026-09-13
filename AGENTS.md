@@ -157,16 +157,17 @@ src/opendota_sdk/
 ├── client.py            # OpenDotaAsyncClient (owns all raw fetching and caching)
 ├── enums.py             # Hero-related enums and shared enum types
 ├── models.py            # Typed Item and Hero models, plus item enums
-├── http/
-│   ├── _auth.py         # Header-based auth handling
-│   ├── _retry.py        # Retry policy and decorator builder
-│   └── _transport.py    # Sync/async transport implementations
-└── resources/           # Reserved for future resource/service modules
+└── http/
+    ├── _auth.py         # Header-based auth handling
+    ├── _retry.py        # Retry policy and decorator builder
+    └── _transport.py    # Sync/async transport implementations
 ```
 
 Notes:
 
-- `resources/` is not yet a real service layer. Do not assume `PlayerService`, `HeroService`, or `BaseService` exist.
+- There is no `resources/` directory. A past `AsyncResourceBase` scaffold there was removed for having
+  zero consumers and zero tests since the day it was added — see §11. Do not assume `PlayerService`,
+  `HeroService`, `BaseService`, or any resource/service module exists.
 - `models.py` currently contains public-facing dataclasses and item enums despite its generic name.
 
 ---
@@ -393,7 +394,10 @@ When editing this project, do not introduce instruction drift in these areas:
 
 - do not document `Session` as current API unless it exists in code
 - do not document sync clients as supported
-- do not describe `resources/` as implemented when it is still mostly reserved
+- do not describe a `resources/` service layer as implemented, or scaffold one back in, without a
+  concrete need — the `AsyncResourceBase` stub that lived there was removed for having zero consumers
+  and zero tests since it was first added; a future resource layer should be designed against a real
+  domain's actual usage, not resurrected from that shape
 - do not reintroduce a `ConstantsRegistry`/`constants.py`-style raw-cache layer without a concrete
   need — it was removed for being a redundant cache with no consumer beyond the client itself
 - do not claim player or match domain objects exist until they do
