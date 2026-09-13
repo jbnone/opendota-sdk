@@ -7,7 +7,6 @@ from typing import Any, Self
 
 from opendota_sdk._config import OpenDotaClientConfig
 from opendota_sdk.assembler import Assembler
-from opendota_sdk.constants import ConstantsRegistry
 from opendota_sdk.http._auth import AuthHandler
 from opendota_sdk.http._retry import RetryPolicy
 from opendota_sdk.http._transport import AsyncHTTPTransport
@@ -93,9 +92,17 @@ class OpenDotaAsyncClient(ClientLogicMixin):
             auth_handler=self._auth_handler,
             retry_policy=self._retry_policy,
         )
-        self._constants = ConstantsRegistry(self._transport)
         self._assembler = Assembler()
+
         self._heroes_cache: list[Hero] | None = None
+        self._heroes_by_id: dict[int, Hero] = {}
+        self._heroes_by_name: dict[str, Hero] = {}
+        self._heroes_lock = asyncio.Lock()
+
+        self._items_cache: list[Item] | None = None
+        self._items_by_id: dict[int, Item] = {}
+        self._items_by_name: dict[str, Item] = {}
+        self._items_lock = asyncio.Lock()
 
     async def _get(
         self,
@@ -116,32 +123,35 @@ class OpenDotaAsyncClient(ClientLogicMixin):
 
     async def get_heroes(self) -> list[Hero]:
         """Retrieve info about all Dota 2 heroes as typed models, cached per client."""
-        if self._heroes_cache is not None:
-            return self._heroes_cache
+        if self._heroes_cache is None:
+            async with self._heroes_lock:
+                if self._heroes_cache is None:
+                    (
+                        heroes_api,
+                        heroes_constants,
+                        hero_abilities,
+                        abilities,
+                        hero_lore,
+                    ) = await asyncio.gather(
+                        self._get("/heroes"),
+                        self._get("/constants/heroes"),
+                        self._get("/constants/hero_abilities"),
+                        self._get("/constants/abilities"),
+                        self._get("/constants/hero_lore"),
+                    )
+                    heroes = self.make_heroes(
+                        heroes_api=heroes_api,
+                        heroes_constants=heroes_constants,
+                        hero_abilities=hero_abilities,
+                        abilities=abilities,
+                        hero_lore=hero_lore,
+                        assembler=self._assembler,
+                    )
+                    self._heroes_by_id = {hero.id: hero for hero in heroes}
+                    self._heroes_by_name = {hero.name: hero for hero in heroes}
+                    self._heroes_cache = heroes
 
-        (
-            heroes_api,
-            heroes_constants,
-            hero_abilities,
-            abilities,
-            hero_lore,
-        ) = await asyncio.gather(
-            self._get("/heroes"),
-            self._get("/constants/heroes"),
-            self._get("/constants/hero_abilities"),
-            self._get("/constants/abilities"),
-            self._get("/constants/hero_lore"),
-        )
-        heroes = self.make_heroes(
-            heroes_api=heroes_api,
-            heroes_constants=heroes_constants,
-            hero_abilities=hero_abilities,
-            abilities=abilities,
-            hero_lore=hero_lore,
-            assembler=self._assembler,
-        )
-        self._heroes_cache = heroes
-        return heroes
+        return list(self._heroes_cache)
 
     async def get_hero(
         self, *, hero_id: int | None = None, hero_name: str | None = None
@@ -152,24 +162,40 @@ class OpenDotaAsyncClient(ClientLogicMixin):
         if hero_id is not None and hero_name is not None:
             raise ValueError("Provide either hero_id or hero_name, not both.")
 
-        heroes = await self.get_heroes()
+        await self.get_heroes()
         if hero_id is not None:
-            return next((hero for hero in heroes if hero.id == hero_id), None)
-        return next((hero for hero in heroes if hero.name == hero_name), None)
+            return self._heroes_by_id.get(hero_id)
+        return self._heroes_by_name.get(hero_name)
 
     async def get_items(self) -> list[Item]:
-        """Fetch all items from the OpenDota constants endpoint."""
-        raw_items = await self._constants.get_items()
-        return self._assembler.list_items(raw_items)
+        """Fetch all items from the OpenDota constants endpoint, cached per client."""
+        if self._items_cache is None:
+            async with self._items_lock:
+                if self._items_cache is None:
+                    items_data = await self._get("/constants/items")
+                    raw_items = [
+                        {**data, "name": name} for name, data in items_data.items()
+                    ]
+                    items = self._assembler.list_items(raw_items)
+                    self._items_by_id = {item.id: item for item in items}
+                    self._items_by_name = {item.name: item for item in items}
+                    self._items_cache = items
+
+        return list(self._items_cache)
 
     async def get_item(
         self, *, item_id: int | None = None, item_name: str | None = None
     ) -> Item | None:
         """Fetch a single item by id or name, or None if it doesn't exist."""
-        raw_item = await self._constants.get_item(item_id=item_id, item_name=item_name)
-        if raw_item is None:
-            return None
-        return self._assembler.get_item(raw_item)
+        if item_id is None and item_name is None:
+            raise ValueError("Either item_id or item_name must be provided.")
+        if item_id is not None and item_name is not None:
+            raise ValueError("Provide either item_id or item_name, not both.")
+
+        await self.get_items()
+        if item_id is not None:
+            return self._items_by_id.get(item_id)
+        return self._items_by_name.get(item_name)
 
     async def close(self) -> None:
         """Close the client and release resources."""

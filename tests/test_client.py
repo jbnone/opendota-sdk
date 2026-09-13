@@ -1,5 +1,6 @@
 """Tests for OpenDota client."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -165,7 +166,8 @@ async def test_get_heroes_caches_after_first_call():
         first = await client.get_heroes()
         second = await client.get_heroes()
 
-    assert first is second
+    assert first == second
+    assert first[0] is second[0]
     assert client._get.await_count == 5
 
 
@@ -251,40 +253,37 @@ async def test_get_hero_requires_exactly_one_lookup_key():
             await client.get_hero(hero_id=1, hero_name="npc_dota_hero_antimage")
 
 
+_BLINK_ITEMS_DATA = {"blink": {"id": 1, "dname": "Blink Dagger", "cost": 2250}}
+
+
 @pytest.mark.asyncio
 async def test_get_items_returns_typed_item_models():
-    raw_items = [
-        {"id": 1, "name": "blink", "dname": "Blink Dagger", "cost": 2250},
-        {
+    items_data = {
+        "blink": {"id": 1, "dname": "Blink Dagger", "cost": 2250},
+        "recipe_arcane_blink": {
             "id": 606,
-            "name": "recipe_arcane_blink",
             "dname": "Arcane Blink Recipe",
             "cost": 1750,
             "behavior": False,
         },
-    ]
+    }
 
     async with OpenDotaAsyncClient() as client:
-        client._constants.get_items = AsyncMock(return_value=raw_items)
+        client._get = AsyncMock(return_value=items_data)
 
         items = await client.get_items()
 
     assert len(items) == 2
     assert all(isinstance(item, Item) for item in items)
-    assert items[0].name == "blink"
-    assert items[0].descriptive_name == "Blink Dagger"
+    assert {item.name for item in items} == {"blink", "recipe_arcane_blink"}
 
 
 @pytest.mark.asyncio
 async def test_get_item_by_id_returns_typed_item_model():
-    raw_item = {"id": 1, "name": "blink", "dname": "Blink Dagger", "cost": 2250}
-
     async with OpenDotaAsyncClient() as client:
-        client._constants.get_item = AsyncMock(return_value=raw_item)
+        client._get = AsyncMock(return_value=_BLINK_ITEMS_DATA)
 
         item = await client.get_item(item_id=1)
-
-        client._constants.get_item.assert_awaited_once_with(item_id=1, item_name=None)
 
     assert isinstance(item, Item)
     assert item.name == "blink"
@@ -293,16 +292,10 @@ async def test_get_item_by_id_returns_typed_item_model():
 
 @pytest.mark.asyncio
 async def test_get_item_by_name_returns_typed_item_model():
-    raw_item = {"id": 1, "name": "blink", "dname": "Blink Dagger", "cost": 2250}
-
     async with OpenDotaAsyncClient() as client:
-        client._constants.get_item = AsyncMock(return_value=raw_item)
+        client._get = AsyncMock(return_value=_BLINK_ITEMS_DATA)
 
         item = await client.get_item(item_name="blink")
-
-        client._constants.get_item.assert_awaited_once_with(
-            item_id=None, item_name="blink"
-        )
 
     assert isinstance(item, Item)
     assert item.name == "blink"
@@ -311,7 +304,7 @@ async def test_get_item_by_name_returns_typed_item_model():
 @pytest.mark.asyncio
 async def test_get_item_not_found_returns_none():
     async with OpenDotaAsyncClient() as client:
-        client._constants.get_item = AsyncMock(return_value=None)
+        client._get = AsyncMock(return_value=_BLINK_ITEMS_DATA)
 
         item = await client.get_item(item_id=999)
 
@@ -319,17 +312,110 @@ async def test_get_item_not_found_returns_none():
 
 
 @pytest.mark.asyncio
-async def test_get_items_calls_constants_registry_exactly_once():
+async def test_get_item_requires_exactly_one_lookup_key():
     async with OpenDotaAsyncClient() as client:
-        client._constants.get_items = AsyncMock(return_value=[])
+        with pytest.raises(ValueError, match="Either item_id or item_name"):
+            await client.get_item()
 
-        await client.get_items()
-
-        client._constants.get_items.assert_awaited_once()
+        with pytest.raises(ValueError, match="Provide either item_id or item_name"):
+            await client.get_item(item_id=1, item_name="blink")
 
 
 @pytest.mark.asyncio
-async def test_get_items_end_to_end_with_real_constants_registry_and_assembler():
+async def test_get_item_shares_cache_and_identity_with_get_items():
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(return_value=_BLINK_ITEMS_DATA)
+
+        items = await client.get_items()
+        item = await client.get_item(item_id=1)
+
+        client._get.assert_awaited_once()
+
+    assert item is items[0]
+
+
+@pytest.mark.asyncio
+async def test_get_items_calls_transport_exactly_once():
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(return_value={})
+
+        await client.get_items()
+
+        client._get.assert_awaited_once_with("/constants/items")
+
+
+@pytest.mark.asyncio
+async def test_get_items_caches_after_first_call():
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(return_value=_BLINK_ITEMS_DATA)
+
+        first = await client.get_items()
+        second = await client.get_items()
+
+    assert first == second
+    client._get.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_items_returned_list_mutation_does_not_affect_cache():
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(return_value=_BLINK_ITEMS_DATA)
+
+        first = await client.get_items()
+        first.append(first[0])
+        second = await client.get_items()
+
+    assert len(second) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_heroes_returned_list_mutation_does_not_affect_cache():
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(side_effect=_antimage_side_effect())
+
+        first = await client.get_heroes()
+        first.append(first[0])
+        second = await client.get_heroes()
+
+    assert len(second) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_items_concurrent_calls_fetch_only_once():
+    async def slow_get(path, **kwargs):
+        await asyncio.sleep(0)
+        return _BLINK_ITEMS_DATA
+
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(side_effect=slow_get)
+
+        results = await asyncio.gather(client.get_items(), client.get_items())
+
+    client._get.assert_awaited_once()
+    assert results[0] == results[1]
+
+
+@pytest.mark.asyncio
+async def test_get_heroes_concurrent_calls_fetch_only_once():
+    async def slow_get(path, **kwargs):
+        await asyncio.sleep(0)
+        responses = {
+            "/heroes": _ANTIMAGE_HEROES_API,
+            "/constants/heroes": _ANTIMAGE_HEROES_CONSTANTS,
+        }
+        return responses.get(path, {})
+
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(side_effect=slow_get)
+
+        results = await asyncio.gather(client.get_heroes(), client.get_heroes())
+
+    assert client._get.await_count == 5
+    assert results[0] == results[1]
+
+
+@pytest.mark.asyncio
+async def test_get_items_end_to_end_with_real_transport_and_assembler():
     raw_items_payload = {
         "blink": {"id": 1, "dname": "Blink Dagger", "cost": 2250},
         "recipe_arcane_blink": {
@@ -347,3 +433,14 @@ async def test_get_items_end_to_end_with_real_constants_registry_and_assembler()
 
     assert len(items) == 2
     assert {item.name for item in items} == {"blink", "recipe_arcane_blink"}
+
+
+@pytest.mark.asyncio
+async def test_get_items_handles_real_items_json_payload(real_items_json):
+    async with OpenDotaAsyncClient() as client:
+        client._transport.request_json = AsyncMock(return_value=real_items_json)
+
+        items = await client.get_items()
+
+    assert len(items) == len(real_items_json)
+    assert all(isinstance(item, Item) for item in items)

@@ -62,12 +62,21 @@ When writing code or instructions, be explicit about whether something is **curr
 
 Constants are an internal implementation detail, not public API.
 
-- `ConstantsRegistry` exists today in `src/opendota_sdk/constants.py`
-- it is used internally by `OpenDotaAsyncClient`
-- it should **not** be exported from `__init__.py`
-- contributors should avoid designing user workflows around direct registry access
+- there is no dedicated constants-registry module — a past `ConstantsRegistry` class (in
+  `src/opendota_sdk/constants.py`) was removed once it became a redundant cache: `client.get_items()`
+  already guards its own fetch behind a cache+lock, so the registry's internal raw-payload cache never
+  got exercised a second time in practice, with no other consumer anywhere in the codebase
+- `OpenDotaAsyncClient.get_items()` fetches `/constants/items` directly via `self._get(...)`, exactly
+  like `get_heroes()` fetches its five raw payloads — no intermediate raw-cache class for either domain
+- contributors should avoid designing user workflows around raw constants access; `get_items()`/
+  `get_item()` are the supported path
 
-For items specifically, constants are fetched lazily from the OpenDota constants route and cached in memory per client instance.
+`OpenDotaAsyncClient.get_items()`/`get_item()` cache the **assembled, indexed** `Item` result on the
+client itself — the same shape heroes use (see §6) — behind an `asyncio.Lock` that guards against two
+concurrent calls both triggering a fetch before either populates the cache. Both `get_items()` and
+`get_heroes()` return a fresh copy of the cached list on every call, so mutating a returned list never
+corrupts the cache; the objects inside are frozen dataclasses, so sharing references to them across calls
+is safe.
 
 ---
 
@@ -145,8 +154,7 @@ src/opendota_sdk/
 ├── _errors.py           # SDK-specific exception types
 ├── _records.py          # Raw item record boundary before assembly
 ├── assembler.py         # Item normalization and assembly
-├── client.py            # OpenDotaAsyncClient
-├── constants.py         # Internal constants registry for items
+├── client.py            # OpenDotaAsyncClient (owns all raw fetching and caching)
 ├── enums.py             # Hero-related enums and shared enum types
 ├── models.py            # Typed Item and Hero models, plus item enums
 ├── http/
@@ -160,7 +168,6 @@ Notes:
 
 - `resources/` is not yet a real service layer. Do not assume `PlayerService`, `HeroService`, or `BaseService` exist.
 - `models.py` currently contains public-facing dataclasses and item enums despite its generic name.
-- `constants.py` currently holds an internal registry implementation, not public enum definitions.
 
 ---
 
@@ -172,11 +179,10 @@ The item flow is the current proof of concept for the broader SDK direction.
 
 ```text
 OpenDota constants route
-    -> ConstantsRegistry
+    -> OpenDotaAsyncClient.get_items() (raw fetch + cache)
     -> ItemRecord
     -> Assembler
     -> Item
-    -> OpenDotaAsyncClient.get_items()
 ```
 
 ### 5.2 What To Preserve
@@ -196,7 +202,7 @@ OpenDota constants route
 
 When improving item behavior:
 
-- start at `assembler.py`, `_records.py`, `constants.py`, `models.py`, or `client.py`
+- start at `assembler.py`, `_records.py`, `models.py`, or `client.py`
 - preserve the raw-record -> assembler -> model flow
 - add focused tests before widening scope
 
@@ -210,7 +216,10 @@ Current shape:
 
 - `OpenDotaAsyncClient.get_heroes()` fetches `/heroes`, `/constants/heroes`, `/constants/hero_abilities`,
   `/constants/abilities`, and `/constants/hero_lore` concurrently (`asyncio.gather`)
-- the merged result is cached on the client instance (`self._heroes_cache`); repeated calls do not re-fetch
+- the merged result is cached on the client instance (`self._heroes_cache`, plus `_heroes_by_id`/
+  `_heroes_by_name` indices for O(1) `get_hero()` lookup), guarded by `self._heroes_lock` against two
+  concurrent calls both triggering a fetch — the same shape `get_items()`/`get_item()` use (§2.3);
+  repeated calls do not re-fetch and each call returns a fresh copy of the cached list
 - `ClientLogicMixin.make_heroes()` merges the five payloads per hero: base stats by numeric id
   (`/heroes` + `/constants/heroes`), ability/talent name references by hero internal name
   (`/constants/hero_abilities`), which are then resolved against `/constants/abilities` by ability name
@@ -385,7 +394,8 @@ When editing this project, do not introduce instruction drift in these areas:
 - do not document `Session` as current API unless it exists in code
 - do not document sync clients as supported
 - do not describe `resources/` as implemented when it is still mostly reserved
-- do not describe `constants.py` as public API when the registry is internal
+- do not reintroduce a `ConstantsRegistry`/`constants.py`-style raw-cache layer without a concrete
+  need — it was removed for being a redundant cache with no consumer beyond the client itself
 - do not claim player or match domain objects exist until they do
 - do not move examples ahead of implementation reality
 
