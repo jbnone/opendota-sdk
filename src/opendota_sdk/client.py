@@ -15,52 +15,7 @@ from opendota_sdk.models import Hero, Item
 logger = logging.getLogger(__name__)
 
 
-class ClientLogicMixin:
-    """Mixin for client logic shared by async client flows."""
-
-    def make_heroes(
-        self,
-        *,
-        heroes_api: list[dict[str, Any]],
-        heroes_constants: dict[str, dict[str, Any]],
-        hero_abilities: dict[str, dict[str, Any]],
-        abilities: dict[str, dict[str, Any]],
-        hero_lore: dict[str, str],
-        assembler: Assembler,
-    ) -> list[Hero]:
-        """Merge hero API data with constants and build typed Hero models."""
-        heroes: list[Hero] = []
-        for hero in heroes_api:
-            hero_id = str(hero["id"])
-            if hero_id in heroes_constants:
-                merged_hero = {**heroes_constants[hero_id], **hero}
-            else:
-                logger.warning(
-                    f"Hero ID {hero_id} from /heroes not found in /constants/heroes, using API data only"
-                )
-                merged_hero = dict(hero)
-
-            hero_name = str(hero.get("name", ""))
-            hero_ability_data = hero_abilities.get(hero_name)
-            if hero_ability_data is None:
-                logger.warning(
-                    f"Hero name {hero_name!r} not found in /constants/hero_abilities, no abilities/talents"
-                )
-            else:
-                merged_hero["abilities"] = hero_ability_data.get("abilities")
-                merged_hero["talents"] = hero_ability_data.get("talents")
-
-            short_name = hero_name.removeprefix("npc_dota_hero_")
-            merged_hero["lore"] = hero_lore.get(short_name)
-
-            heroes.append(
-                assembler.normalize_hero(merged_hero, abilities_by_name=abilities)
-            )
-
-        return heroes
-
-
-class OpenDotaAsyncClient(ClientLogicMixin):
+class OpenDotaAsyncClient:
     """Asynchronous client for the OpenDota API."""
 
     def __init__(
@@ -121,6 +76,47 @@ class OpenDotaAsyncClient(ClientLogicMixin):
             **kwargs,
         )
 
+    @staticmethod
+    def _make_heroes(
+        *,
+        heroes_api: list[dict[str, Any]],
+        heroes_constants: dict[str, dict[str, Any]],
+        hero_abilities: dict[str, dict[str, Any]],
+        abilities: dict[str, dict[str, Any]],
+        hero_lore: dict[str, str],
+        assembler: Assembler,
+    ) -> list[Hero]:
+        """Merge hero API data with constants and build typed Hero models."""
+        heroes: list[Hero] = []
+        for hero in heroes_api:
+            hero_id = str(hero["id"])
+            if hero_id in heroes_constants:
+                merged_hero = {**heroes_constants[hero_id], **hero}
+            else:
+                logger.warning(
+                    f"Hero ID {hero_id} from /heroes not found in /constants/heroes, using API data only"
+                )
+                merged_hero = dict(hero)
+
+            hero_name = str(hero.get("name", ""))
+            hero_ability_data = hero_abilities.get(hero_name)
+            if hero_ability_data is None:
+                logger.warning(
+                    f"Hero name {hero_name!r} not found in /constants/hero_abilities, no abilities/talents"
+                )
+            else:
+                merged_hero["abilities"] = hero_ability_data.get("abilities")
+                merged_hero["talents"] = hero_ability_data.get("talents")
+
+            short_name = hero_name.removeprefix("npc_dota_hero_")
+            merged_hero["lore"] = hero_lore.get(short_name)
+
+            heroes.append(
+                assembler.normalize_hero(merged_hero, abilities_by_name=abilities)
+            )
+
+        return heroes
+
     async def get_heroes(self) -> list[Hero]:
         """Retrieve info about all Dota 2 heroes as typed models, cached per client."""
         if self._heroes_cache is None:
@@ -139,7 +135,7 @@ class OpenDotaAsyncClient(ClientLogicMixin):
                         self._get("/constants/abilities"),
                         self._get("/constants/hero_lore"),
                     )
-                    heroes = self.make_heroes(
+                    heroes = self._make_heroes(
                         heroes_api=heroes_api,
                         heroes_constants=heroes_constants,
                         hero_abilities=hero_abilities,

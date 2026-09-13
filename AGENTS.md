@@ -221,7 +221,7 @@ Current shape:
   `_heroes_by_name` indices for O(1) `get_hero()` lookup), guarded by `self._heroes_lock` against two
   concurrent calls both triggering a fetch — the same shape `get_items()`/`get_item()` use (§2.3);
   repeated calls do not re-fetch and each call returns a fresh copy of the cached list
-- `ClientLogicMixin.make_heroes()` merges the five payloads per hero: base stats by numeric id
+- `OpenDotaAsyncClient._make_heroes()` (a private static method — no mixin) merges the five payloads per hero: base stats by numeric id
   (`/heroes` + `/constants/heroes`), ability/talent name references by hero internal name
   (`/constants/hero_abilities`), which are then resolved against `/constants/abilities` by ability name
   (also used to resolve talent titles — talent names are themselves ability-shaped entries), and lore by
