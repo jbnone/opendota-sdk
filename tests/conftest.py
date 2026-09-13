@@ -20,6 +20,38 @@ def real_items_json() -> dict:
         return json.load(handle)
 
 
+DOTACONSTANTS_FIXTURES_DIR = FIXTURES_DIR / "dotaconstants"
+
+
+def _load_dotaconstants_fixture(name: str) -> dict:
+    with (DOTACONSTANTS_FIXTURES_DIR / name).open(encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+@pytest.fixture(scope="session")
+def real_heroes_json() -> dict:
+    """Real dotaconstants /constants/heroes payload, shared across hero-slice tests."""
+    return _load_dotaconstants_fixture("heroes.json")
+
+
+@pytest.fixture(scope="session")
+def real_hero_abilities_json() -> dict:
+    """Real dotaconstants hero_abilities payload (per-hero ability/talent/facet references)."""
+    return _load_dotaconstants_fixture("hero_abilities.json")
+
+
+@pytest.fixture(scope="session")
+def real_abilities_json() -> dict:
+    """Real dotaconstants abilities payload, cross-referenced by name from hero_abilities.json."""
+    return _load_dotaconstants_fixture("abilities.json")
+
+
+@pytest.fixture(scope="session")
+def real_hero_lore_json() -> dict:
+    """Real dotaconstants hero_lore payload."""
+    return _load_dotaconstants_fixture("hero_lore.json")
+
+
 @pytest.fixture
 def default_config():
     """Return a default configuration for testing."""
