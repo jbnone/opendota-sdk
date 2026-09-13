@@ -6,13 +6,9 @@ from typing import Any
 class OpenDotaError(Exception):
     """Base exception for all OpenDota SDK errors."""
 
-    pass
-
 
 class TransportError(OpenDotaError):
     """Raised when a transport-level error occurs (connection, timeout, etc.)."""
-
-    pass
 
 
 class HTTPStatusError(OpenDotaError):
@@ -85,5 +81,3 @@ class RateLimitError(OpenDotaError):
 
 class ResponseDecodeError(OpenDotaError):
     """Raised when response body cannot be decoded (e.g., invalid JSON)."""
-
-    pass

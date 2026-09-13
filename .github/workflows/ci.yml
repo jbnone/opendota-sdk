@@ -63,7 +63,6 @@ jobs:
               path.write_text(re.sub(pattern, repl, text, count=1, flags=re.MULTILINE))
 
           replace(Path('pyproject.toml'), r'^(version\s*=\s*")(.*)(".*)$', lambda m: f"{m.group(1)}{version}{m.group(3)}")
-          replace(Path('src/opendota_sdk/__init__.py'), r'^(.*__version__\s*=\s*")(.*)(".*)$', lambda m: f"{m.group(1)}{version}{m.group(3)}")
           print('Set project version to', version)
           PY
 
@@ -74,8 +73,8 @@ jobs:
           mkdir -p dist-testpypi
           cp dist/* dist-testpypi/
 
-      - name: Restore original version files
-        run: git restore pyproject.toml src/opendota_sdk/__init__.py
+      - name: Restore original version file
+        run: git restore pyproject.toml
 
       - name: Upload PyPI artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
