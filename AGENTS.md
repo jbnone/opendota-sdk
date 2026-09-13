@@ -356,6 +356,10 @@ Ask:
 - use dataclasses for typed domain data
 - keep value-like models predictable
 - if a model is meant to represent static game data, consider immutability deliberately, but do not change mutability casually without checking current usage
+- `Item`, `Hero`, `ItemAbility`, `HeroAbility`, `HeroTalent`, and `Attribute` are all `frozen=True` — a
+  deliberate decision (nothing in the codebase mutated a constructed instance, verified before freezing).
+  Note this only blocks reassigning a field; it does not make nested `list`/`dict` fields (e.g. `raw`,
+  `abilities`) immutable, and `hash()` on these models will raise since they hold unhashable list fields.
 
 ### 10.4 Documentation Discipline
 

@@ -60,7 +60,7 @@ class ItemTargetType(str, Enum):
     BUILDING = "Building"
 
 
-@dataclass
+@dataclass(frozen=True)
 class ItemAbility:
     """An effect an item itself grants."""
 
@@ -69,7 +69,7 @@ class ItemAbility:
     description: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class Attribute:
     """A labeled key/value tooltip stat, shared by item and ability data."""
 
@@ -92,7 +92,7 @@ class AbilityBehavior(str, Enum):
     UNIT_TARGET = "Unit Target"
 
 
-@dataclass
+@dataclass(frozen=True)
 class Item:
     """Dota 2 Item enriched with constants data."""
 
@@ -133,7 +133,7 @@ class Item:
         return dict(self.raw)
 
 
-@dataclass
+@dataclass(frozen=True)
 class HeroTalent:
     """A hero talent-tree entry (level 10/15/20/25 choice)."""
 
@@ -142,7 +142,7 @@ class HeroTalent:
     title: str = ""
 
 
-@dataclass
+@dataclass(frozen=True)
 class HeroAbility:
     """A hero ability, resolved from /constants/abilities by name."""
 
@@ -155,7 +155,7 @@ class HeroAbility:
     is_innate: bool = False
 
 
-@dataclass
+@dataclass(frozen=True)
 class Hero:
     """Dota 2 Hero enriched with constants, abilities, talents, and lore."""
 
@@ -205,3 +205,6 @@ class Hero:
     @property
     def innate_abilities(self) -> list[HeroAbility]:
         return [ability for ability in self.abilities if ability.is_innate]
+
+    def as_dict(self) -> dict[str, Any]:
+        return dict(self.raw)
