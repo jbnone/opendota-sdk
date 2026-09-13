@@ -2,8 +2,10 @@
 
 import pytest
 
+from opendota_sdk._errors import OpenDotaError
 from opendota_sdk._records import ItemRecord
 from opendota_sdk.assembler import Assembler
+from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttr, HeroRole
 from opendota_sdk.models import (
     DamageType,
     Dispellable,
@@ -13,6 +15,15 @@ from opendota_sdk.models import (
     ItemTargetTeam,
     ItemTargetType,
 )
+
+_MINIMAL_HERO_PAYLOAD = {
+    "id": 1,
+    "name": "npc_dota_hero_antimage",
+    "localized_name": "Anti-Mage",
+    "primary_attr": "agi",
+    "attack_type": "Melee",
+    "roles": ["Carry", "Escape"],
+}
 
 # Shared falsy-default fields observed on real recipe/token-shaped dotaconstants entries.
 _FALSY_ITEM_DEFAULTS = {
@@ -681,3 +692,57 @@ def test_normalize_item_accepts_pre_built_item_record_directly(assembler):
     assert item.id == 99
     assert item.descriptive_name == "Custom Item"
     assert item.raw == {"custom": True}
+
+
+def test_normalize_hero_coerces_enum_fields_from_raw_strings(assembler):
+    hero = assembler.normalize_hero(_MINIMAL_HERO_PAYLOAD)
+
+    assert hero.primary_attr is HeroPrimaryAttr.AGI
+    assert hero.attack_type is HeroAttackType.MELEE
+    assert hero.roles == [HeroRole.CARRY, HeroRole.ESCAPE]
+    assert all(isinstance(role, HeroRole) for role in hero.roles)
+
+
+def test_normalize_hero_defaults_missing_optional_numeric_fields(assembler):
+    hero = assembler.normalize_hero(_MINIMAL_HERO_PAYLOAD)
+
+    assert hero.base_health == 0
+    assert hero.base_health_regen == 0.0
+    assert hero.turn_rate is None
+    assert hero.cm_enabled is False
+    assert hero.roles == [HeroRole.CARRY, HeroRole.ESCAPE]
+
+
+def test_normalize_hero_preserves_raw_payload(assembler):
+    hero = assembler.normalize_hero(_MINIMAL_HERO_PAYLOAD)
+
+    assert hero.raw == _MINIMAL_HERO_PAYLOAD
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    ["id", "name", "localized_name", "primary_attr", "attack_type"],
+)
+def test_normalize_hero_raises_on_missing_identity_fields(missing_field, assembler):
+    payload = {**_MINIMAL_HERO_PAYLOAD}
+    del payload[missing_field]
+
+    with pytest.raises(OpenDotaError):
+        assembler.normalize_hero(payload)
+
+
+def test_normalize_hero_ignores_unknown_extra_keys(assembler):
+    payload = {**_MINIMAL_HERO_PAYLOAD, "some_future_field": "unexpected"}
+
+    hero = assembler.normalize_hero(payload)
+
+    assert hero.id == 1
+    assert hero.raw["some_future_field"] == "unexpected"
+
+
+def test_list_heroes_preserves_order_and_count(assembler):
+    second_hero = {**_MINIMAL_HERO_PAYLOAD, "id": 2, "name": "npc_dota_hero_axe"}
+
+    heroes = assembler.list_heroes([_MINIMAL_HERO_PAYLOAD, second_hero])
+
+    assert [hero.id for hero in heroes] == [1, 2]

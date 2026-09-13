@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from opendota_sdk._config import OpenDotaClientConfig
+from opendota_sdk._errors import OpenDotaError
 from opendota_sdk.client import OpenDotaAsyncClient
 from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttr, HeroRole
 from opendota_sdk.models import Hero, Item
@@ -31,9 +32,9 @@ async def test_get_heroes_returns_typed_hero_models():
             "id": 1,
             "name": "npc_dota_hero_antimage",
             "localized_name": "Anti-Mage",
-            "primary_attr": HeroPrimaryAttr.AGI,
-            "attack_type": HeroAttackType.MELEE,
-            "roles": [HeroRole.CARRY],
+            "primary_attr": "agi",
+            "attack_type": "Melee",
+            "roles": ["Carry", "Escape"],
             "legs": 2,
         }
     ]
@@ -74,9 +75,51 @@ async def test_get_heroes_returns_typed_hero_models():
         heroes = await client.get_heroes()
 
     assert len(heroes) == 1
-    assert isinstance(heroes[0], Hero)
-    assert heroes[0].localized_name == "Anti-Mage"
-    assert heroes[0].img == "/apps/dota2/images/heroes/antimage_full.png"
+    hero = heroes[0]
+    assert isinstance(hero, Hero)
+    assert hero.localized_name == "Anti-Mage"
+    assert hero.img == "/apps/dota2/images/heroes/antimage_full.png"
+    assert hero.primary_attr is HeroPrimaryAttr.AGI
+    assert hero.attack_type is HeroAttackType.MELEE
+    assert hero.roles == [HeroRole.CARRY, HeroRole.ESCAPE]
+    assert all(isinstance(role, HeroRole) for role in hero.roles)
+
+
+@pytest.mark.asyncio
+async def test_get_heroes_caches_after_first_call():
+    heroes_api = [
+        {
+            "id": 1,
+            "name": "npc_dota_hero_antimage",
+            "localized_name": "Anti-Mage",
+            "primary_attr": "agi",
+            "attack_type": "Melee",
+            "roles": ["Carry"],
+            "legs": 2,
+        }
+    ]
+    heroes_constants = {"1": {}}
+
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(side_effect=[heroes_api, heroes_constants])
+
+        first = await client.get_heroes()
+        second = await client.get_heroes()
+
+    assert first is second
+    assert client._get.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_heroes_raises_opendota_error_on_malformed_hero():
+    heroes_api = [{"id": 1, "name": "npc_dota_hero_antimage"}]
+    heroes_constants: dict[str, dict] = {}
+
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(side_effect=[heroes_api, heroes_constants])
+
+        with pytest.raises(OpenDotaError, match="localized_name"):
+            await client.get_heroes()
 
 
 @pytest.mark.asyncio

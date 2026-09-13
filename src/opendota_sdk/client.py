@@ -23,6 +23,7 @@ class ClientLogicMixin:
         *,
         heroes_api: list[dict[str, Any]],
         heroes_constants: dict[str, dict[str, Any]],
+        assembler: Assembler,
     ) -> list[Hero]:
         """Merge hero API data with constants and build typed Hero models."""
         heroes: list[Hero] = []
@@ -30,12 +31,12 @@ class ClientLogicMixin:
             hero_id = str(hero["id"])
             if hero_id in heroes_constants:
                 merged_hero = {**heroes_constants[hero_id], **hero}
-                heroes.append(Hero(**merged_hero))
+                heroes.append(assembler.normalize_hero(merged_hero))
             else:
                 logger.warning(
                     f"Hero ID {hero_id} from /heroes not found in /constants/heroes, using API data only"
                 )
-                heroes.append(Hero(**hero))
+                heroes.append(assembler.normalize_hero(hero))
 
         return heroes
 
@@ -74,6 +75,7 @@ class OpenDotaAsyncClient(ClientLogicMixin):
         )
         self._constants = ConstantsRegistry(self._transport)
         self._assembler = Assembler()
+        self._heroes_cache: list[Hero] | None = None
 
     async def _get(
         self,
@@ -93,14 +95,21 @@ class OpenDotaAsyncClient(ClientLogicMixin):
         )
 
     async def get_heroes(self) -> list[Hero]:
-        """Retrieve info about all Dota 2 heroes as typed models."""
+        """Retrieve info about all Dota 2 heroes as typed models, cached per client."""
+        if self._heroes_cache is not None:
+            return self._heroes_cache
+
         heroes_api: list[dict[str, Any]] = await self._get("/heroes")
         heroes_constants: dict[str, dict[str, Any]] = await self._get(
             "/constants/heroes"
         )
-        return self.make_heroes(
-            heroes_api=heroes_api, heroes_constants=heroes_constants
+        heroes = self.make_heroes(
+            heroes_api=heroes_api,
+            heroes_constants=heroes_constants,
+            assembler=self._assembler,
         )
+        self._heroes_cache = heroes
+        return heroes
 
     async def get_items(self) -> list[Item]:
         """Fetch all items from the OpenDota constants endpoint."""

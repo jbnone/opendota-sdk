@@ -4,18 +4,21 @@ from collections.abc import Sequence
 from enum import Enum
 from typing import Any, TypeVar
 
+from opendota_sdk._errors import OpenDotaError
 from opendota_sdk._records import ItemRecord
+from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttr, HeroRole
 from opendota_sdk.models import (
     DamageType,
     Dispellable,
+    Hero,
     Item,
     ItemAbility,
     ItemAbilityType,
     ItemAttribute,
     ItemBehavior,
+    ItemQuality,
     ItemTargetTeam,
     ItemTargetType,
-    ItemQuality,
 )
 
 E = TypeVar("E", bound=Enum)
@@ -80,6 +83,66 @@ class Assembler:
         """Build a single Item model from a raw payload."""
         return self.normalize_item(raw_item)
 
+    def normalize_hero(self, merged: dict[str, Any]) -> Hero:
+        """Build a Hero model from a merged /heroes + /constants/heroes payload."""
+        hero_id = self._normalize_int(merged.get("id"))
+        name = self._normalize_str(merged.get("name"))
+        localized_name = self._normalize_str(merged.get("localized_name"))
+        primary_attr = self._normalize_enum(merged.get("primary_attr"), HeroPrimaryAttr)
+        attack_type = self._normalize_enum(merged.get("attack_type"), HeroAttackType)
+        if (
+            hero_id is None
+            or not name
+            or not localized_name
+            or primary_attr is None
+            or attack_type is None
+        ):
+            raise OpenDotaError(
+                "Cannot build Hero: missing or malformed id/name/localized_name/"
+                f"primary_attr/attack_type in payload {merged!r}"
+            )
+
+        return Hero(
+            id=hero_id,
+            name=name,
+            localized_name=localized_name,
+            primary_attr=primary_attr,
+            attack_type=attack_type,
+            roles=self._normalize_enum_list(merged.get("roles"), HeroRole),
+            legs=self._require_int(merged.get("legs")),
+            img=self._normalize_str(merged.get("img")) or "",
+            icon=self._normalize_str(merged.get("icon")) or "",
+            base_health=self._require_int(merged.get("base_health")),
+            base_health_regen=self._require_float(merged.get("base_health_regen")),
+            base_mana=self._require_int(merged.get("base_mana")),
+            base_mana_regen=self._require_float(merged.get("base_mana_regen")),
+            base_armor=self._require_float(merged.get("base_armor")),
+            base_mr=self._require_int(merged.get("base_mr")),
+            base_attack_min=self._require_int(merged.get("base_attack_min")),
+            base_attack_max=self._require_int(merged.get("base_attack_max")),
+            base_attack_time=self._require_int(merged.get("base_attack_time")),
+            base_str=self._require_int(merged.get("base_str")),
+            base_agi=self._require_int(merged.get("base_agi")),
+            base_int=self._require_int(merged.get("base_int")),
+            str_gain=self._require_float(merged.get("str_gain")),
+            agi_gain=self._require_float(merged.get("agi_gain")),
+            int_gain=self._require_float(merged.get("int_gain")),
+            attack_point=self._require_float(merged.get("attack_point")),
+            attack_range=self._require_int(merged.get("attack_range")),
+            projectile_speed=self._require_int(merged.get("projectile_speed")),
+            attack_rate=self._require_float(merged.get("attack_rate")),
+            move_speed=self._require_int(merged.get("move_speed")),
+            turn_rate=self._normalize_float(merged.get("turn_rate")),
+            cm_enabled=self._require_bool(merged.get("cm_enabled")),
+            day_vision=self._require_int(merged.get("day_vision")),
+            night_vision=self._require_int(merged.get("night_vision")),
+            raw=dict(merged),
+        )
+
+    def list_heroes(self, merged_heroes: Sequence[dict[str, Any]]) -> list[Hero]:
+        """Build Hero models from merged /heroes + /constants/heroes payloads."""
+        return [self.normalize_hero(merged) for merged in merged_heroes]
+
     def _require_bool(self, value: Any) -> bool:
         normalized = self._normalize_bool(value)
         return normalized if normalized is not None else False
@@ -87,6 +150,26 @@ class Assembler:
     def _require_int(self, value: Any) -> int:
         normalized = self._normalize_int(value)
         return normalized if normalized is not None else 0
+
+    def _require_float(self, value: Any) -> float:
+        normalized = self._normalize_float(value)
+        return normalized if normalized is not None else 0.0
+
+    def _normalize_float(
+        self, value: Any, default: float | None = None
+    ) -> float | None:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return default
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value.strip())
+            except ValueError:
+                return default
+        return default
 
     def _require_bool_or_int(self, value: Any) -> bool | int:
         normalized = self._normalize_bool_or_int(value)
@@ -227,10 +310,13 @@ class Assembler:
         return self._normalize_enum(normalized[0], ItemTargetTeam)
 
     def _normalize_target_types(self, value: Any) -> list[ItemTargetType]:
+        return self._normalize_enum_list(value, ItemTargetType)
+
+    def _normalize_enum_list(self, value: Any, enum_type: type[E]) -> list[E]:
         return [
             enum_value
             for entry in self._normalize_str_list(value)
-            if (enum_value := self._normalize_enum(entry, ItemTargetType)) is not None
+            if (enum_value := self._normalize_enum(entry, enum_type)) is not None
         ]
 
     def _normalize_components(self, value: Any) -> list[str]:

@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from opendota_sdk.enums import HeroPrimaryAttr, HeroAttackType, HeroRole
+from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttr, HeroRole
 
 
 class ItemQuality(str, Enum):
@@ -158,3 +158,5 @@ class Hero:
     cm_enabled: bool
     day_vision: int
     night_vision: int
+
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)

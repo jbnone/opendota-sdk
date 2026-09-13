@@ -204,20 +204,31 @@ When improving item behavior:
 
 ## 6. Hero Flow Guidance
 
-Heroes currently follow a lighter path than items.
+Heroes currently follow a lighter path than items, but it is no longer a bare pass-through.
 
 Current shape:
 
-- `OpenDotaAsyncClient.get_heroes()` fetches `/heroes`
-- it also fetches `/constants/heroes`
-- `ClientLogicMixin.make_heroes()` merges the two payloads
-- the client returns typed `Hero` dataclasses directly
+- `OpenDotaAsyncClient.get_heroes()` fetches `/heroes` and `/constants/heroes`
+- the merged result is cached on the client instance (`self._heroes_cache`); repeated calls do not re-fetch
+- `ClientLogicMixin.make_heroes()` merges the two payloads per hero
+- each merged payload is passed to `Assembler.normalize_hero()`, which reuses the same generic
+  normalization helpers items rely on (`_normalize_enum`, `_normalize_enum_list`, `_normalize_int`,
+  `_normalize_float`, `_normalize_bool`, etc.) to coerce `primary_attr`/`attack_type`/`roles` into real
+  enum members, default missing optional fields safely, and raise `OpenDotaError` if `id`, `name`,
+  `localized_name`, `primary_attr`, or `attack_type` can't be resolved from the payload
+- `Hero` now carries a `raw` field (mirroring `Item.raw`) with the full merged payload
 
 Implications:
 
-- hero enrichment logic currently lives closer to the client than the item flow does
-- if hero functionality expands, it may eventually need a dedicated assembly path
-- do not force heroes into the item architecture mechanically unless the duplication is real and justified
+- hero enrichment logic still lives closer to the client than the item flow does (no `HeroRecord`
+  intermediate dataclass — the merged dict is normalized directly), but it no longer does
+  `Hero(**merged_dict)`; it goes through the assembler like items do
+- `Assembler` is shared between the item and hero flows: composite methods (`normalize_item`,
+  `normalize_hero`) and their field-specific helpers stay flow-specific, but generic scalar/enum
+  coercion helpers are reused across both — extend those shared helpers rather than duplicating them
+  if a third domain needs the same kind of coercion
+- do not force heroes into the item architecture mechanically (no `HeroRecord`, no hero-specific
+  assembler subclass) unless real duplication emerges beyond what the shared helpers already cover
 
 ---
 
