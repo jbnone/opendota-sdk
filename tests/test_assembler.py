@@ -821,7 +821,20 @@ def test_normalize_hero_talent_parses_name_and_level(assembler):
         {"name": "special_bonus_strength_15", "level": 3}
     )
 
-    assert talent == HeroTalent(name="special_bonus_strength_15", level=3)
+    assert talent == HeroTalent(
+        name="special_bonus_strength_15", level=3, title="Special Bonus Strength 15"
+    )
+
+
+def test_normalize_hero_talent_resolves_title_from_abilities_by_name(assembler):
+    talent = assembler.normalize_hero_talent(
+        {"name": "special_bonus_strength_15", "level": 3},
+        abilities_by_name={
+            "special_bonus_strength_15": {"dname": "+15 Strength"},
+        },
+    )
+
+    assert talent.title == "+15 Strength"
 
 
 def test_normalize_hero_builds_abilities_and_talents_from_merged_payload(assembler):
@@ -841,7 +854,13 @@ def test_normalize_hero_builds_abilities_and_talents_from_merged_payload(assembl
     ]
     assert hero.abilities[0].title == "Berserker's Call"
     assert hero.abilities[1].title == "Axe Unknown Spell"
-    assert hero.talents == [HeroTalent(name="special_bonus_strength_15", level=3)]
+    assert hero.talents == [
+        HeroTalent(
+            name="special_bonus_strength_15",
+            level=3,
+            title="Special Bonus Strength 15",
+        )
+    ]
 
 
 def test_normalize_hero_flattens_nested_ability_name_lists(assembler):
@@ -867,6 +886,18 @@ def test_normalize_hero_defaults_abilities_and_talents_to_empty_when_absent(asse
 
     assert hero.abilities == []
     assert hero.talents == []
+
+
+def test_normalize_hero_defaults_lore_to_empty_string_when_absent(assembler):
+    hero = assembler.normalize_hero(_MINIMAL_HERO_PAYLOAD)
+
+    assert hero.lore == ""
+
+
+def test_normalize_hero_reads_lore_from_merged_payload(assembler):
+    hero = assembler.normalize_hero({**_MINIMAL_HERO_PAYLOAD, "lore": "A grim tale."})
+
+    assert hero.lore == "A grim tale."
 
 
 def test_hero_innate_abilities_property_filters_correctly(assembler):
@@ -899,7 +930,11 @@ def test_hero_innate_abilities_property_empty_when_none_are_innate(assembler):
 
 
 def test_normalize_hero_end_to_end_with_real_axe_fixtures(
-    assembler, real_heroes_json, real_hero_abilities_json, real_abilities_json
+    assembler,
+    real_heroes_json,
+    real_hero_abilities_json,
+    real_abilities_json,
+    real_hero_lore_json,
 ):
     axe_constants = next(
         entry
@@ -911,6 +946,7 @@ def test_normalize_hero_end_to_end_with_real_axe_fixtures(
         **axe_constants,
         "abilities": axe_hero_abilities["abilities"],
         "talents": axe_hero_abilities["talents"],
+        "lore": real_hero_lore_json["axe"],
     }
 
     axe = assembler.normalize_hero(merged, abilities_by_name=real_abilities_json)
@@ -918,4 +954,7 @@ def test_normalize_hero_end_to_end_with_real_axe_fixtures(
     assert axe.name == "npc_dota_hero_axe"
     assert [a.name for a in axe.innate_abilities] == ["axe_one_man_army"]
     assert len(axe.talents) == 8
+    assert all(talent.title for talent in axe.talents)
     assert any(a.name == "axe_berserkers_call" for a in axe.abilities)
+    assert axe.lore == real_hero_lore_json["axe"]
+    assert axe.lore != ""

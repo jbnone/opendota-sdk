@@ -26,6 +26,7 @@ class ClientLogicMixin:
         heroes_constants: dict[str, dict[str, Any]],
         hero_abilities: dict[str, dict[str, Any]],
         abilities: dict[str, dict[str, Any]],
+        hero_lore: dict[str, str],
         assembler: Assembler,
     ) -> list[Hero]:
         """Merge hero API data with constants and build typed Hero models."""
@@ -49,6 +50,9 @@ class ClientLogicMixin:
             else:
                 merged_hero["abilities"] = hero_ability_data.get("abilities")
                 merged_hero["talents"] = hero_ability_data.get("talents")
+
+            short_name = hero_name.removeprefix("npc_dota_hero_")
+            merged_hero["lore"] = hero_lore.get(short_name)
 
             heroes.append(
                 assembler.normalize_hero(merged_hero, abilities_by_name=abilities)
@@ -115,17 +119,25 @@ class OpenDotaAsyncClient(ClientLogicMixin):
         if self._heroes_cache is not None:
             return self._heroes_cache
 
-        heroes_api, heroes_constants, hero_abilities, abilities = await asyncio.gather(
+        (
+            heroes_api,
+            heroes_constants,
+            hero_abilities,
+            abilities,
+            hero_lore,
+        ) = await asyncio.gather(
             self._get("/heroes"),
             self._get("/constants/heroes"),
             self._get("/constants/hero_abilities"),
             self._get("/constants/abilities"),
+            self._get("/constants/hero_lore"),
         )
         heroes = self.make_heroes(
             heroes_api=heroes_api,
             heroes_constants=heroes_constants,
             hero_abilities=hero_abilities,
             abilities=abilities,
+            hero_lore=hero_lore,
             assembler=self._assembler,
         )
         self._heroes_cache = heroes

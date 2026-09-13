@@ -136,6 +136,7 @@ class HeroTalent:
 
     name: str
     level: int
+    title: str = ""
 
 
 @dataclass
@@ -189,6 +190,7 @@ class Hero:
 
     abilities: list[HeroAbility] = field(default_factory=list)
     talents: list[HeroTalent] = field(default_factory=list)
+    lore: str = ""
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
     @property

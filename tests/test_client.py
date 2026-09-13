@@ -98,9 +98,17 @@ async def test_get_heroes_returns_typed_hero_models():
         },
     }
 
+    hero_lore = {"antimage": "The monks of Turstarkuri watched..."}
+
     async with OpenDotaAsyncClient() as client:
         client._get = AsyncMock(
-            side_effect=[heroes_api, heroes_constants, hero_abilities, abilities]
+            side_effect=[
+                heroes_api,
+                heroes_constants,
+                hero_abilities,
+                abilities,
+                hero_lore,
+            ]
         )
 
         heroes = await client.get_heroes()
@@ -126,7 +134,14 @@ async def test_get_heroes_returns_typed_hero_models():
     assert mana_break.attributes[1].display == "MANA BURNED PER HIT:"
     generic_hidden = hero.abilities[1]
     assert generic_hidden.title == "Generic Hidden"
-    assert hero.talents == [HeroTalent(name="special_bonus_hp_regen_3", level=1)]
+    assert hero.lore == "The monks of Turstarkuri watched..."
+    assert hero.talents == [
+        HeroTalent(
+            name="special_bonus_hp_regen_3",
+            level=1,
+            title="Special Bonus Hp Regen 3",
+        )
+    ]
 
 
 @pytest.mark.asyncio
@@ -145,13 +160,13 @@ async def test_get_heroes_caches_after_first_call():
     heroes_constants = {"1": {}}
 
     async with OpenDotaAsyncClient() as client:
-        client._get = AsyncMock(side_effect=[heroes_api, heroes_constants, {}, {}])
+        client._get = AsyncMock(side_effect=[heroes_api, heroes_constants, {}, {}, {}])
 
         first = await client.get_heroes()
         second = await client.get_heroes()
 
     assert first is second
-    assert client._get.await_count == 4
+    assert client._get.await_count == 5
 
 
 @pytest.mark.asyncio
@@ -160,7 +175,7 @@ async def test_get_heroes_raises_opendota_error_on_malformed_hero():
     heroes_constants: dict[str, dict] = {}
 
     async with OpenDotaAsyncClient() as client:
-        client._get = AsyncMock(side_effect=[heroes_api, heroes_constants, {}, {}])
+        client._get = AsyncMock(side_effect=[heroes_api, heroes_constants, {}, {}, {}])
 
         with pytest.raises(OpenDotaError, match="localized_name"):
             await client.get_heroes()
@@ -180,7 +195,7 @@ _ANTIMAGE_HEROES_CONSTANTS = {"1": {}}
 
 
 def _antimage_side_effect() -> list:
-    return [_ANTIMAGE_HEROES_API, _ANTIMAGE_HEROES_CONSTANTS, {}, {}]
+    return [_ANTIMAGE_HEROES_API, _ANTIMAGE_HEROES_CONSTANTS, {}, {}, {}]
 
 
 @pytest.mark.asyncio
@@ -223,7 +238,7 @@ async def test_get_hero_reuses_heroes_cache():
         await client.get_hero(hero_id=1)
         await client.get_hero(hero_name="npc_dota_hero_antimage")
 
-    assert client._get.await_count == 4
+    assert client._get.await_count == 5
 
 
 @pytest.mark.asyncio

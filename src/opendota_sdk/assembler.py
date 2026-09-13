@@ -103,11 +103,22 @@ class Assembler:
             is_innate=raw.get("is_innate") is True,
         )
 
-    def normalize_hero_talent(self, raw: dict[str, Any]) -> HeroTalent:
+    def normalize_hero_talent(
+        self,
+        raw: dict[str, Any],
+        *,
+        abilities_by_name: dict[str, dict[str, Any]] | None = None,
+    ) -> HeroTalent:
         """Build a HeroTalent from a hero_abilities.json talent entry."""
+        name = self._normalize_str(raw.get("name")) or ""
+        talent_data = (abilities_by_name or {}).get(name)
+        title = self._humanize_slug(name)
+        if talent_data is not None:
+            title = self._normalize_str(talent_data.get("dname")) or title
         return HeroTalent(
-            name=self._normalize_str(raw.get("name")) or "",
+            name=name,
             level=self._require_int(raw.get("level")),
+            title=title,
         )
 
     def _flatten_ability_names(self, value: Any) -> list[str]:
@@ -154,7 +165,7 @@ class Assembler:
             for ability_name in self._flatten_ability_names(merged.get("abilities"))
         ]
         talents = [
-            self.normalize_hero_talent(entry)
+            self.normalize_hero_talent(entry, abilities_by_name=abilities_by_name)
             for entry in self._normalize_dict_list(merged.get("talents"))
         ]
 
@@ -194,6 +205,7 @@ class Assembler:
             night_vision=self._require_int(merged.get("night_vision")),
             abilities=abilities,
             talents=talents,
+            lore=self._normalize_str(merged.get("lore")) or "",
             raw=dict(merged),
         )
 

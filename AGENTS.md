@@ -209,19 +209,22 @@ Heroes currently follow a lighter path than items, but it is no longer a bare pa
 Current shape:
 
 - `OpenDotaAsyncClient.get_heroes()` fetches `/heroes`, `/constants/heroes`, `/constants/hero_abilities`,
-  and `/constants/abilities` concurrently (`asyncio.gather`)
+  `/constants/abilities`, and `/constants/hero_lore` concurrently (`asyncio.gather`)
 - the merged result is cached on the client instance (`self._heroes_cache`); repeated calls do not re-fetch
-- `ClientLogicMixin.make_heroes()` merges the four payloads per hero: base stats by numeric id
-  (`/heroes` + `/constants/heroes`), and ability/talent name references by hero internal name
+- `ClientLogicMixin.make_heroes()` merges the five payloads per hero: base stats by numeric id
+  (`/heroes` + `/constants/heroes`), ability/talent name references by hero internal name
   (`/constants/hero_abilities`), which are then resolved against `/constants/abilities` by ability name
+  (also used to resolve talent titles — talent names are themselves ability-shaped entries), and lore by
+  the hero's short name (`/constants/hero_lore` keys drop the `npc_dota_hero_` prefix)
 - each merged payload is passed to `Assembler.normalize_hero()`, which reuses the same generic
   normalization helpers items rely on (`_normalize_enum`, `_normalize_enum_list`, `_normalize_int`,
   `_normalize_float`, `_normalize_bool`, etc.) to coerce `primary_attr`/`attack_type`/`roles` into real
   enum members, default missing optional fields safely, and raise `OpenDotaError` if `id`, `name`,
   `localized_name`, `primary_attr`, or `attack_type` can't be resolved from the payload
-- `Hero` carries `abilities: list[HeroAbility]`, `talents: list[HeroTalent]`, a computed
-  `innate_abilities` property (filters `abilities` by `is_innate` — cardinality varies per hero, not
-  always exactly one), and a `raw` field (mirroring `Item.raw`) with the full merged payload
+- `Hero` carries `abilities: list[HeroAbility]`, `talents: list[HeroTalent]` (each with a resolved
+  `title`), `lore: str`, a computed `innate_abilities` property (filters `abilities` by `is_innate` —
+  cardinality varies per hero, not always exactly one), and a `raw` field (mirroring `Item.raw`) with
+  the full merged payload
 
 Implications:
 
