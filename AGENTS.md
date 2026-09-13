@@ -1,4 +1,4 @@
-# OpenDota SDK — Copilot Instructions
+# OpenDota SDK — Agent Instructions
 
 **Status**: Alpha, architecture still settling  
 **Current focus**: Async client foundation, item domain vertical slice, hero model flow  
@@ -332,7 +332,7 @@ Ask:
 
 When the architecture changes, update:
 
-- `copilot-instructions.md`
+- `AGENTS.md`
 - public examples in `README.md` if affected
 - tests that encode the intended usage
 
