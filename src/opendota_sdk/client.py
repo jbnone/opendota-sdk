@@ -111,6 +111,20 @@ class OpenDotaAsyncClient(ClientLogicMixin):
         self._heroes_cache = heroes
         return heroes
 
+    async def get_hero(
+        self, *, hero_id: int | None = None, hero_name: str | None = None
+    ) -> Hero | None:
+        """Fetch a single hero by id or name, or None if it doesn't exist."""
+        if hero_id is None and hero_name is None:
+            raise ValueError("Either hero_id or hero_name must be provided.")
+        if hero_id is not None and hero_name is not None:
+            raise ValueError("Provide either hero_id or hero_name, not both.")
+
+        heroes = await self.get_heroes()
+        if hero_id is not None:
+            return next((hero for hero in heroes if hero.id == hero_id), None)
+        return next((hero for hero in heroes if hero.name == hero_name), None)
+
     async def get_items(self) -> list[Item]:
         """Fetch all items from the OpenDota constants endpoint."""
         raw_items = await self._constants.get_items()

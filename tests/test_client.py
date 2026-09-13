@@ -122,6 +122,80 @@ async def test_get_heroes_raises_opendota_error_on_malformed_hero():
             await client.get_heroes()
 
 
+_ANTIMAGE_HEROES_API = [
+    {
+        "id": 1,
+        "name": "npc_dota_hero_antimage",
+        "localized_name": "Anti-Mage",
+        "primary_attr": "agi",
+        "attack_type": "Melee",
+        "roles": ["Carry"],
+    }
+]
+_ANTIMAGE_HEROES_CONSTANTS = {"1": {}}
+
+
+@pytest.mark.asyncio
+async def test_get_hero_by_id_returns_matching_hero():
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(
+            side_effect=[_ANTIMAGE_HEROES_API, _ANTIMAGE_HEROES_CONSTANTS]
+        )
+
+        hero = await client.get_hero(hero_id=1)
+
+    assert isinstance(hero, Hero)
+    assert hero.localized_name == "Anti-Mage"
+
+
+@pytest.mark.asyncio
+async def test_get_hero_by_name_returns_matching_hero():
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(
+            side_effect=[_ANTIMAGE_HEROES_API, _ANTIMAGE_HEROES_CONSTANTS]
+        )
+
+        hero = await client.get_hero(hero_name="npc_dota_hero_antimage")
+
+    assert isinstance(hero, Hero)
+    assert hero.id == 1
+
+
+@pytest.mark.asyncio
+async def test_get_hero_not_found_returns_none():
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(
+            side_effect=[_ANTIMAGE_HEROES_API, _ANTIMAGE_HEROES_CONSTANTS]
+        )
+
+        hero = await client.get_hero(hero_id=999)
+
+    assert hero is None
+
+
+@pytest.mark.asyncio
+async def test_get_hero_reuses_heroes_cache():
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(
+            side_effect=[_ANTIMAGE_HEROES_API, _ANTIMAGE_HEROES_CONSTANTS]
+        )
+
+        await client.get_hero(hero_id=1)
+        await client.get_hero(hero_name="npc_dota_hero_antimage")
+
+    assert client._get.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_hero_requires_exactly_one_lookup_key():
+    async with OpenDotaAsyncClient() as client:
+        with pytest.raises(ValueError, match="Either hero_id or hero_name"):
+            await client.get_hero()
+
+        with pytest.raises(ValueError, match="Provide either hero_id or hero_name"):
+            await client.get_hero(hero_id=1, hero_name="npc_dota_hero_antimage")
+
+
 @pytest.mark.asyncio
 async def test_get_items_returns_typed_item_models():
     raw_items = [
