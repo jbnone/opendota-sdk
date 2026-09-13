@@ -101,6 +101,8 @@ class Assembler:
             damage_type=self._normalize_enum(raw.get("dmg_type"), DamageType),
             attributes=self._normalize_attributes(raw.get("attrib")),
             is_innate=raw.get("is_innate") is True,
+            mana_cost=self._normalize_float_list(raw.get("mc")),
+            cooldown=self._normalize_float_list(raw.get("cd")),
         )
 
     def normalize_hero_talent(
@@ -395,6 +397,15 @@ class Assembler:
             enum_value
             for entry in self._normalize_str_list(value)
             if (enum_value := self._normalize_enum(entry, enum_type)) is not None
+        ]
+
+    def _normalize_float_list(self, value: Any) -> list[float]:
+        """Normalize a scalar or list of numeric strings, skipping unparseable entries."""
+        entries = value if isinstance(value, list) else [value]
+        return [
+            normalized
+            for entry in entries
+            if (normalized := self._normalize_float(entry)) is not None
         ]
 
     def _normalize_components(self, value: Any) -> list[str]:

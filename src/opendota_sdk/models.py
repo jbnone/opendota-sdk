@@ -153,6 +153,10 @@ class HeroAbility:
     damage_type: DamageType | None = None
     attributes: list[Attribute] = field(default_factory=list)
     is_innate: bool = False
+    # Per-level mana cost / cooldown (seconds). Empty means none; one value means flat
+    # (no level scaling); multiple values are ordered by ability level.
+    mana_cost: list[float] = field(default_factory=list)
+    cooldown: list[float] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

@@ -243,6 +243,11 @@ Implications:
   references into a separate lookup file
 - do not force heroes into the item architecture mechanically (no `HeroRecord`, no hero-specific
   assembler subclass) unless real duplication emerges beyond what the shared helpers already cover
+- `HeroAbility.mana_cost`/`cooldown` are `list[float]` (via `Assembler._normalize_float_list`), not
+  `Item`'s `bool | int` convention — confirmed via direct data comparison that ability `mc`/`cd` are
+  always numeric strings or per-level lists, never booleans, so forcing them into Item's scalar
+  convention would misrepresent the data. Empty list means no cost/cooldown; length > 1 means it scales
+  by ability level; unparseable entries (~0.1% of real data, e.g. `"undefined"`) are skipped, not raised
 
 ---
 

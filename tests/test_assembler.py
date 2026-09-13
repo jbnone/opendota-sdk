@@ -772,6 +772,8 @@ _BERSERKERS_CALL_RAW = {
             "generated": True,
         },
     ],
+    "mc": ["90", "100", "110", "120"],
+    "cd": ["18", "16", "14", "12"],
 }
 
 
@@ -790,6 +792,8 @@ def test_normalize_hero_ability_resolves_header_list_values_and_generated_flag(
     assert ability.attributes[1].value == ["12", "13", "14", "15"]
     assert ability.attributes[1].generated is False
     assert ability.attributes[2].generated is True
+    assert ability.mana_cost == [90.0, 100.0, 110.0, 120.0]
+    assert ability.cooldown == [18.0, 16.0, 14.0, 12.0]
 
 
 def test_normalize_hero_ability_falls_back_to_humanized_name_when_unresolved(
@@ -802,6 +806,35 @@ def test_normalize_hero_ability_falls_back_to_humanized_name_when_unresolved(
     assert ability.description == ""
     assert ability.behaviors is False
     assert ability.attributes == []
+    assert ability.mana_cost == []
+    assert ability.cooldown == []
+
+
+def test_normalize_hero_ability_normalizes_flat_scalar_cost_and_cooldown(assembler):
+    ability = assembler.normalize_hero_ability(
+        "axe_counter_helix", {"dname": "Counter Helix", "cd": "0.3"}
+    )
+
+    assert ability.mana_cost == []
+    assert ability.cooldown == [0.3]
+
+
+def test_normalize_hero_ability_skips_unparseable_cost_and_cooldown_values(assembler):
+    ability = assembler.normalize_hero_ability(
+        "phantom_lancer_juxtapose",
+        {"dname": "Juxtapose", "mc": "undefined", "cd": "undefined"},
+    )
+
+    assert ability.mana_cost == []
+    assert ability.cooldown == []
+
+
+def test_normalize_hero_ability_skips_unparseable_entries_within_a_list(assembler):
+    ability = assembler.normalize_hero_ability(
+        "some_spell", {"dname": "Some Spell", "cd": ["10", "undefined", "5"]}
+    )
+
+    assert ability.cooldown == [10.0, 5.0]
 
 
 def test_normalize_hero_ability_reads_is_innate_directly(assembler):
@@ -958,3 +991,9 @@ def test_normalize_hero_end_to_end_with_real_axe_fixtures(
     assert any(a.name == "axe_berserkers_call" for a in axe.abilities)
     assert axe.lore == real_hero_lore_json["axe"]
     assert axe.lore != ""
+
+    berserkers_call = next(a for a in axe.abilities if a.name == "axe_berserkers_call")
+    assert berserkers_call.mana_cost == [90.0, 100.0, 110.0, 120.0]
+    assert berserkers_call.cooldown == [18.0, 16.0, 14.0, 12.0]
+    counter_helix = next(a for a in axe.abilities if a.name == "axe_counter_helix")
+    assert counter_helix.cooldown == [0.3]
