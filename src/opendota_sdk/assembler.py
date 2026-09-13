@@ -8,14 +8,16 @@ from opendota_sdk._errors import OpenDotaError
 from opendota_sdk._records import ItemRecord
 from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttr, HeroRole
 from opendota_sdk.models import (
+    AbilityBehavior,
+    Attribute,
     DamageType,
     Dispellable,
     Hero,
+    HeroAbility,
+    HeroTalent,
     Item,
     ItemAbility,
     ItemAbilityType,
-    ItemAttribute,
-    ItemBehavior,
     ItemQuality,
     ItemTargetTeam,
     ItemTargetType,
@@ -83,7 +85,49 @@ class Assembler:
         """Build a single Item model from a raw payload."""
         return self.normalize_item(raw_item)
 
-    def normalize_hero(self, merged: dict[str, Any]) -> Hero:
+    def normalize_hero_ability(
+        self, name: str, raw: dict[str, Any] | None
+    ) -> HeroAbility:
+        """Build a HeroAbility from a /constants/abilities entry (or a name-only stub if not found)."""
+        if raw is None:
+            return HeroAbility(name=name, title=self._humanize_slug(name))
+
+        title = self._normalize_str(raw.get("dname")) or self._humanize_slug(name)
+        return HeroAbility(
+            name=name,
+            title=title,
+            description=self._normalize_str(raw.get("desc")) or "",
+            behaviors=self._normalize_behaviors(raw.get("behavior")),
+            damage_type=self._normalize_enum(raw.get("dmg_type"), DamageType),
+            attributes=self._normalize_attributes(raw.get("attrib")),
+            is_innate=raw.get("is_innate") is True,
+        )
+
+    def normalize_hero_talent(self, raw: dict[str, Any]) -> HeroTalent:
+        """Build a HeroTalent from a hero_abilities.json talent entry."""
+        return HeroTalent(
+            name=self._normalize_str(raw.get("name")) or "",
+            level=self._require_int(raw.get("level")),
+        )
+
+    def _flatten_ability_names(self, value: Any) -> list[str]:
+        """Flatten one level of nesting (e.g. Monkey King's transform-state pair)."""
+        if not isinstance(value, list):
+            return []
+        names: list[str] = []
+        for entry in value:
+            if isinstance(entry, list):
+                names.extend(str(item) for item in entry)
+            else:
+                names.append(str(entry))
+        return names
+
+    def normalize_hero(
+        self,
+        merged: dict[str, Any],
+        *,
+        abilities_by_name: dict[str, dict[str, Any]] | None = None,
+    ) -> Hero:
         """Build a Hero model from a merged /heroes + /constants/heroes payload."""
         hero_id = self._normalize_int(merged.get("id"))
         name = self._normalize_str(merged.get("name"))
@@ -101,6 +145,18 @@ class Assembler:
                 "Cannot build Hero: missing or malformed id/name/localized_name/"
                 f"primary_attr/attack_type in payload {merged!r}"
             )
+
+        abilities_by_name = abilities_by_name or {}
+        abilities = [
+            self.normalize_hero_ability(
+                ability_name, abilities_by_name.get(ability_name)
+            )
+            for ability_name in self._flatten_ability_names(merged.get("abilities"))
+        ]
+        talents = [
+            self.normalize_hero_talent(entry)
+            for entry in self._normalize_dict_list(merged.get("talents"))
+        ]
 
         return Hero(
             id=hero_id,
@@ -136,6 +192,8 @@ class Assembler:
             cm_enabled=self._require_bool(merged.get("cm_enabled")),
             day_vision=self._require_int(merged.get("day_vision")),
             night_vision=self._require_int(merged.get("night_vision")),
+            abilities=abilities,
+            talents=talents,
             raw=dict(merged),
         )
 
@@ -260,15 +318,21 @@ class Assembler:
             return []
         return [entry for entry in value if isinstance(entry, dict)]
 
-    def _normalize_attributes(self, value: Any) -> list[ItemAttribute]:
-        return [
-            ItemAttribute(
-                key=str(entry.get("key", "")),
-                value=str(entry.get("value", "")),
-                display=entry.get("display"),
+    def _normalize_attributes(self, value: Any) -> list[Attribute]:
+        attributes: list[Attribute] = []
+        for entry in self._normalize_dict_list(value):
+            raw_value = entry.get("value", "")
+            attributes.append(
+                Attribute(
+                    key=str(entry.get("key", "")),
+                    value=[str(item) for item in raw_value]
+                    if isinstance(raw_value, list)
+                    else str(raw_value),
+                    display=entry.get("display", entry.get("header")),
+                    generated=bool(entry.get("generated", False)),
+                )
             )
-            for entry in self._normalize_dict_list(value)
-        ]
+        return attributes
 
     def _normalize_abilities(self, value: Any) -> list[ItemAbility]:
         abilities: list[ItemAbility] = []
@@ -285,7 +349,7 @@ class Assembler:
             )
         return abilities
 
-    def _normalize_behaviors(self, value: Any) -> bool | list[ItemBehavior]:
+    def _normalize_behaviors(self, value: Any) -> bool | list[AbilityBehavior]:
         if isinstance(value, bool):
             return value
 
@@ -294,10 +358,10 @@ class Assembler:
         else:
             values = self._normalize_str_list(value)
 
-        behaviors: list[ItemBehavior] = []
+        behaviors: list[AbilityBehavior] = []
         for item in values:
             try:
-                behaviors.append(ItemBehavior(item))
+                behaviors.append(AbilityBehavior(item))
             except ValueError:
                 continue
 

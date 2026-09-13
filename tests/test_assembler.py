@@ -7,10 +7,11 @@ from opendota_sdk._records import ItemRecord
 from opendota_sdk.assembler import Assembler
 from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttr, HeroRole
 from opendota_sdk.models import (
+    AbilityBehavior,
     DamageType,
     Dispellable,
+    HeroTalent,
     ItemAbilityType,
-    ItemBehavior,
     ItemQuality,
     ItemTargetTeam,
     ItemTargetType,
@@ -125,7 +126,10 @@ def test_normalize_item_builds_typed_item_from_raw_payload(assembler):
     assert item.damage_type is DamageType.MAGICAL
     assert item.dispellable is Dispellable.NO
     assert item.target_team is ItemTargetTeam.FRIENDLY
-    assert item.behaviors == [ItemBehavior.POINT_TARGET, ItemBehavior.INSTANT_CAST]
+    assert item.behaviors == [
+        AbilityBehavior.POINT_TARGET,
+        AbilityBehavior.INSTANT_CAST,
+    ]
     assert item.charges == 0
     assert item.bkb_pierce is False
     assert item.tier == 1
@@ -430,15 +434,15 @@ def test_normalize_abilities_defaults_missing_title_and_description(assembler):
     [
         (True, True),
         (False, False),
-        ("Point Target", [ItemBehavior.POINT_TARGET]),
+        ("Point Target", [AbilityBehavior.POINT_TARGET]),
         (
             "Point Target, Instant Cast",
-            [ItemBehavior.POINT_TARGET, ItemBehavior.INSTANT_CAST],
+            [AbilityBehavior.POINT_TARGET, AbilityBehavior.INSTANT_CAST],
         ),
         # Real shape (e.g. faerie_fire): behavior as a JSON list of strings, not a comma string.
         (
             ["Instant Cast", "No Target"],
-            [ItemBehavior.INSTANT_CAST, ItemBehavior.NO_TARGET],
+            [AbilityBehavior.INSTANT_CAST, AbilityBehavior.NO_TARGET],
         ),
         ([], False),
     ],
@@ -746,3 +750,172 @@ def test_list_heroes_preserves_order_and_count(assembler):
     heroes = assembler.list_heroes([_MINIMAL_HERO_PAYLOAD, second_hero])
 
     assert [hero.id for hero in heroes] == [1, 2]
+
+
+# --- Hero abilities / talents -------------------------------------------------------
+
+_BERSERKERS_CALL_RAW = {
+    "dname": "Berserker's Call",
+    "behavior": "No Target",
+    "desc": "Axe taunts nearby enemy units.",
+    "attrib": [
+        {"key": "radius", "header": "RADIUS:", "value": "315"},
+        {
+            "key": "bonus_armor",
+            "header": "BONUS ARMOR:",
+            "value": ["12", "13", "14", "15"],
+        },
+        {
+            "key": "abilitycastpoint",
+            "header": "CAST TIME:",
+            "value": "0.3",
+            "generated": True,
+        },
+    ],
+}
+
+
+def test_normalize_hero_ability_resolves_header_list_values_and_generated_flag(
+    assembler,
+):
+    ability = assembler.normalize_hero_ability(
+        "axe_berserkers_call", _BERSERKERS_CALL_RAW
+    )
+
+    assert ability.name == "axe_berserkers_call"
+    assert ability.title == "Berserker's Call"
+    assert ability.behaviors == [AbilityBehavior.NO_TARGET]
+    assert ability.attributes[0].display == "RADIUS:"
+    assert ability.attributes[0].value == "315"
+    assert ability.attributes[1].value == ["12", "13", "14", "15"]
+    assert ability.attributes[1].generated is False
+    assert ability.attributes[2].generated is True
+
+
+def test_normalize_hero_ability_falls_back_to_humanized_name_when_unresolved(
+    assembler,
+):
+    ability = assembler.normalize_hero_ability("axe_unknown_spell", None)
+
+    assert ability.name == "axe_unknown_spell"
+    assert ability.title == "Axe Unknown Spell"
+    assert ability.description == ""
+    assert ability.behaviors is False
+    assert ability.attributes == []
+
+
+def test_normalize_hero_ability_reads_is_innate_directly(assembler):
+    innate = assembler.normalize_hero_ability(
+        "axe_one_man_army", {"dname": "One Man Army", "is_innate": True}
+    )
+    not_innate = assembler.normalize_hero_ability(
+        "axe_berserkers_call", _BERSERKERS_CALL_RAW
+    )
+
+    assert innate.is_innate is True
+    assert not_innate.is_innate is False
+
+
+def test_normalize_hero_talent_parses_name_and_level(assembler):
+    talent = assembler.normalize_hero_talent(
+        {"name": "special_bonus_strength_15", "level": 3}
+    )
+
+    assert talent == HeroTalent(name="special_bonus_strength_15", level=3)
+
+
+def test_normalize_hero_builds_abilities_and_talents_from_merged_payload(assembler):
+    payload = {
+        **_MINIMAL_HERO_PAYLOAD,
+        "abilities": ["axe_berserkers_call", "axe_unknown_spell"],
+        "talents": [{"name": "special_bonus_strength_15", "level": 3}],
+    }
+
+    hero = assembler.normalize_hero(
+        payload, abilities_by_name={"axe_berserkers_call": _BERSERKERS_CALL_RAW}
+    )
+
+    assert [a.name for a in hero.abilities] == [
+        "axe_berserkers_call",
+        "axe_unknown_spell",
+    ]
+    assert hero.abilities[0].title == "Berserker's Call"
+    assert hero.abilities[1].title == "Axe Unknown Spell"
+    assert hero.talents == [HeroTalent(name="special_bonus_strength_15", level=3)]
+
+
+def test_normalize_hero_flattens_nested_ability_name_lists(assembler):
+    payload = {
+        **_MINIMAL_HERO_PAYLOAD,
+        "abilities": [
+            "monkey_king_wukongs_command",
+            ["monkey_king_untransform", "monkey_king_transfiguration"],
+        ],
+    }
+
+    hero = assembler.normalize_hero(payload)
+
+    assert [a.name for a in hero.abilities] == [
+        "monkey_king_wukongs_command",
+        "monkey_king_untransform",
+        "monkey_king_transfiguration",
+    ]
+
+
+def test_normalize_hero_defaults_abilities_and_talents_to_empty_when_absent(assembler):
+    hero = assembler.normalize_hero(_MINIMAL_HERO_PAYLOAD)
+
+    assert hero.abilities == []
+    assert hero.talents == []
+
+
+def test_hero_innate_abilities_property_filters_correctly(assembler):
+    payload = {
+        **_MINIMAL_HERO_PAYLOAD,
+        "abilities": ["axe_berserkers_call", "axe_one_man_army"],
+    }
+
+    hero = assembler.normalize_hero(
+        payload,
+        abilities_by_name={
+            "axe_berserkers_call": _BERSERKERS_CALL_RAW,
+            "axe_one_man_army": {"dname": "One Man Army", "is_innate": True},
+        },
+    )
+
+    assert [a.name for a in hero.innate_abilities] == ["axe_one_man_army"]
+
+
+def test_hero_innate_abilities_property_empty_when_none_are_innate(assembler):
+    hero = assembler.normalize_hero(
+        {
+            **_MINIMAL_HERO_PAYLOAD,
+            "abilities": ["axe_berserkers_call"],
+        },
+        abilities_by_name={"axe_berserkers_call": _BERSERKERS_CALL_RAW},
+    )
+
+    assert hero.innate_abilities == []
+
+
+def test_normalize_hero_end_to_end_with_real_axe_fixtures(
+    assembler, real_heroes_json, real_hero_abilities_json, real_abilities_json
+):
+    axe_constants = next(
+        entry
+        for entry in real_heroes_json.values()
+        if entry["name"] == "npc_dota_hero_axe"
+    )
+    axe_hero_abilities = real_hero_abilities_json["npc_dota_hero_axe"]
+    merged = {
+        **axe_constants,
+        "abilities": axe_hero_abilities["abilities"],
+        "talents": axe_hero_abilities["talents"],
+    }
+
+    axe = assembler.normalize_hero(merged, abilities_by_name=real_abilities_json)
+
+    assert axe.name == "npc_dota_hero_axe"
+    assert [a.name for a in axe.innate_abilities] == ["axe_one_man_army"]
+    assert len(axe.talents) == 8
+    assert any(a.name == "axe_berserkers_call" for a in axe.abilities)

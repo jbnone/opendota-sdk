@@ -1,5 +1,6 @@
 """Public client interface for the OpenDota API."""
 
+import asyncio
 import logging
 from types import TracebackType
 from typing import Any, Self
@@ -23,6 +24,8 @@ class ClientLogicMixin:
         *,
         heroes_api: list[dict[str, Any]],
         heroes_constants: dict[str, dict[str, Any]],
+        hero_abilities: dict[str, dict[str, Any]],
+        abilities: dict[str, dict[str, Any]],
         assembler: Assembler,
     ) -> list[Hero]:
         """Merge hero API data with constants and build typed Hero models."""
@@ -31,12 +34,25 @@ class ClientLogicMixin:
             hero_id = str(hero["id"])
             if hero_id in heroes_constants:
                 merged_hero = {**heroes_constants[hero_id], **hero}
-                heroes.append(assembler.normalize_hero(merged_hero))
             else:
                 logger.warning(
                     f"Hero ID {hero_id} from /heroes not found in /constants/heroes, using API data only"
                 )
-                heroes.append(assembler.normalize_hero(hero))
+                merged_hero = dict(hero)
+
+            hero_name = str(hero.get("name", ""))
+            hero_ability_data = hero_abilities.get(hero_name)
+            if hero_ability_data is None:
+                logger.warning(
+                    f"Hero name {hero_name!r} not found in /constants/hero_abilities, no abilities/talents"
+                )
+            else:
+                merged_hero["abilities"] = hero_ability_data.get("abilities")
+                merged_hero["talents"] = hero_ability_data.get("talents")
+
+            heroes.append(
+                assembler.normalize_hero(merged_hero, abilities_by_name=abilities)
+            )
 
         return heroes
 
@@ -99,13 +115,17 @@ class OpenDotaAsyncClient(ClientLogicMixin):
         if self._heroes_cache is not None:
             return self._heroes_cache
 
-        heroes_api: list[dict[str, Any]] = await self._get("/heroes")
-        heroes_constants: dict[str, dict[str, Any]] = await self._get(
-            "/constants/heroes"
+        heroes_api, heroes_constants, hero_abilities, abilities = await asyncio.gather(
+            self._get("/heroes"),
+            self._get("/constants/heroes"),
+            self._get("/constants/hero_abilities"),
+            self._get("/constants/abilities"),
         )
         heroes = self.make_heroes(
             heroes_api=heroes_api,
             heroes_constants=heroes_constants,
+            hero_abilities=hero_abilities,
+            abilities=abilities,
             assembler=self._assembler,
         )
         self._heroes_cache = heroes

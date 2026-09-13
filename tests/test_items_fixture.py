@@ -6,10 +6,10 @@ import pytest
 
 from opendota_sdk.assembler import Assembler
 from opendota_sdk.models import (
+    AbilityBehavior,
     DamageType,
     Dispellable,
     ItemAbilityType,
-    ItemBehavior,
     ItemQuality,
     ItemTargetTeam,
     ItemTargetType,
@@ -38,7 +38,7 @@ def test_assembler_normalizes_every_real_item_without_raising(name):
     assert item.damage_type is None or isinstance(item.damage_type, DamageType)
     assert item.dispellable is None or isinstance(item.dispellable, Dispellable)
     assert isinstance(item.behaviors, bool) or all(
-        isinstance(behavior, ItemBehavior) for behavior in item.behaviors
+        isinstance(behavior, AbilityBehavior) for behavior in item.behaviors
     )
     assert all(
         isinstance(target_type, ItemTargetType) for target_type in item.target_types

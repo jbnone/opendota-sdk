@@ -68,17 +68,24 @@ class ItemAbility:
 
 
 @dataclass
-class ItemAttribute:
+class Attribute:
+    """A labeled key/value tooltip stat, shared by item and ability data."""
+
     key: str
-    value: str
+    value: str | list[str]
     display: str | None = field(default=None)
+    generated: bool = False
 
 
-class ItemBehavior(str, Enum):
+class AbilityBehavior(str, Enum):
+    """How an ability casts, shared by item-granted and hero-innate abilities."""
+
     AOE = "AOE"
     CHANNELED = "Channeled"
+    HIDDEN = "Hidden"
     INSTANT_CAST = "Instant Cast"
     NO_TARGET = "No Target"
+    PASSIVE = "Passive"
     POINT_TARGET = "Point Target"
     UNIT_TARGET = "Unit Target"
 
@@ -106,13 +113,13 @@ class Item:
     damage_type: DamageType | None = None
     dispellable: Dispellable | None = None
     target_team: ItemTargetTeam | None = None
-    behaviors: bool | list[ItemBehavior] = False
+    behaviors: bool | list[AbilityBehavior] = False
 
     charges: bool | int = False
     bkb_pierce: bool | None = None
     tier: int | None = None
 
-    attributes: list[ItemAttribute] = field(default_factory=list)
+    attributes: list[Attribute] = field(default_factory=list)
     abilities: list[ItemAbility] = field(default_factory=list)
     target_types: list[ItemTargetType] = field(default_factory=list)
     components: list[str] = field(default_factory=list)
@@ -121,6 +128,27 @@ class Item:
 
     def as_dict(self) -> dict[str, Any]:
         return dict(self.raw)
+
+
+@dataclass
+class HeroTalent:
+    """A hero talent-tree entry (level 10/15/20/25 choice)."""
+
+    name: str
+    level: int
+
+
+@dataclass
+class HeroAbility:
+    """A hero ability, resolved from /constants/abilities by name."""
+
+    name: str
+    title: str = ""
+    description: str = ""
+    behaviors: bool | list[AbilityBehavior] = False
+    damage_type: DamageType | None = None
+    attributes: list[Attribute] = field(default_factory=list)
+    is_innate: bool = False
 
 
 @dataclass
@@ -159,4 +187,10 @@ class Hero:
     day_vision: int
     night_vision: int
 
+    abilities: list[HeroAbility] = field(default_factory=list)
+    talents: list[HeroTalent] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @property
+    def innate_abilities(self) -> list[HeroAbility]:
+        return [ability for ability in self.abilities if ability.is_innate]

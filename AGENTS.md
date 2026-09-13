@@ -208,15 +208,20 @@ Heroes currently follow a lighter path than items, but it is no longer a bare pa
 
 Current shape:
 
-- `OpenDotaAsyncClient.get_heroes()` fetches `/heroes` and `/constants/heroes`
+- `OpenDotaAsyncClient.get_heroes()` fetches `/heroes`, `/constants/heroes`, `/constants/hero_abilities`,
+  and `/constants/abilities` concurrently (`asyncio.gather`)
 - the merged result is cached on the client instance (`self._heroes_cache`); repeated calls do not re-fetch
-- `ClientLogicMixin.make_heroes()` merges the two payloads per hero
+- `ClientLogicMixin.make_heroes()` merges the four payloads per hero: base stats by numeric id
+  (`/heroes` + `/constants/heroes`), and ability/talent name references by hero internal name
+  (`/constants/hero_abilities`), which are then resolved against `/constants/abilities` by ability name
 - each merged payload is passed to `Assembler.normalize_hero()`, which reuses the same generic
   normalization helpers items rely on (`_normalize_enum`, `_normalize_enum_list`, `_normalize_int`,
   `_normalize_float`, `_normalize_bool`, etc.) to coerce `primary_attr`/`attack_type`/`roles` into real
   enum members, default missing optional fields safely, and raise `OpenDotaError` if `id`, `name`,
   `localized_name`, `primary_attr`, or `attack_type` can't be resolved from the payload
-- `Hero` now carries a `raw` field (mirroring `Item.raw`) with the full merged payload
+- `Hero` carries `abilities: list[HeroAbility]`, `talents: list[HeroTalent]`, a computed
+  `innate_abilities` property (filters `abilities` by `is_innate` — cardinality varies per hero, not
+  always exactly one), and a `raw` field (mirroring `Item.raw`) with the full merged payload
 
 Implications:
 
@@ -224,9 +229,15 @@ Implications:
   intermediate dataclass — the merged dict is normalized directly), but it no longer does
   `Hero(**merged_dict)`; it goes through the assembler like items do
 - `Assembler` is shared between the item and hero flows: composite methods (`normalize_item`,
-  `normalize_hero`) and their field-specific helpers stay flow-specific, but generic scalar/enum
-  coercion helpers are reused across both — extend those shared helpers rather than duplicating them
-  if a third domain needs the same kind of coercion
+  `normalize_hero`, `normalize_hero_ability`, `normalize_hero_talent`) and their field-specific helpers
+  stay flow-specific, but generic scalar/enum coercion helpers are reused across both — extend those
+  shared helpers rather than duplicating them if a third domain needs the same kind of coercion
+- `HeroAbility` reuses `Attribute` (renamed from `ItemAttribute` — no longer item-only) and
+  `AbilityBehavior` (renamed from `ItemBehavior`) from the item slice, since `/constants/abilities`
+  shares real schema with `items.json`'s own `attrib`/`behavior` fields — confirmed by direct data
+  comparison, not assumed. `Item.abilities` (`ItemAbility`/`ItemAbilityType`) is unrelated and was NOT
+  reused: it's a small self-contained nested field, structurally nothing like a hero's ability-name
+  references into a separate lookup file
 - do not force heroes into the item architecture mechanically (no `HeroRecord`, no hero-specific
   assembler subclass) unless real duplication emerges beyond what the shared helpers already cover
 
