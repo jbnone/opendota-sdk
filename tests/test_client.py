@@ -1,10 +1,11 @@
 """Tests for OpenDota client."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from opendota_sdk.client import OpenDotaAsyncClient
+import pytest
+
 from opendota_sdk._config import OpenDotaClientConfig
+from opendota_sdk.client import OpenDotaAsyncClient
 from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttr, HeroRole
 from opendota_sdk.models import Hero, Item
 
@@ -100,6 +101,49 @@ async def test_get_items_returns_typed_item_models():
     assert all(isinstance(item, Item) for item in items)
     assert items[0].name == "blink"
     assert items[0].descriptive_name == "Blink Dagger"
+
+
+@pytest.mark.asyncio
+async def test_get_item_by_id_returns_typed_item_model():
+    raw_item = {"id": 1, "name": "blink", "dname": "Blink Dagger", "cost": 2250}
+
+    async with OpenDotaAsyncClient() as client:
+        client._constants.get_item = AsyncMock(return_value=raw_item)
+
+        item = await client.get_item(item_id=1)
+
+        client._constants.get_item.assert_awaited_once_with(item_id=1, item_name=None)
+
+    assert isinstance(item, Item)
+    assert item.name == "blink"
+    assert item.descriptive_name == "Blink Dagger"
+
+
+@pytest.mark.asyncio
+async def test_get_item_by_name_returns_typed_item_model():
+    raw_item = {"id": 1, "name": "blink", "dname": "Blink Dagger", "cost": 2250}
+
+    async with OpenDotaAsyncClient() as client:
+        client._constants.get_item = AsyncMock(return_value=raw_item)
+
+        item = await client.get_item(item_name="blink")
+
+        client._constants.get_item.assert_awaited_once_with(
+            item_id=None, item_name="blink"
+        )
+
+    assert isinstance(item, Item)
+    assert item.name == "blink"
+
+
+@pytest.mark.asyncio
+async def test_get_item_not_found_returns_none():
+    async with OpenDotaAsyncClient() as client:
+        client._constants.get_item = AsyncMock(return_value=None)
+
+        item = await client.get_item(item_id=999)
+
+    assert item is None
 
 
 @pytest.mark.asyncio

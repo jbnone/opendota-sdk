@@ -9,18 +9,19 @@ from opendota_sdk._errors import (
     TransportError,
 )
 from opendota_sdk.client import OpenDotaAsyncClient
-from opendota_sdk.models import Item
+from opendota_sdk.models import Hero, Item
 
 __version__ = "0.1.0"
 __all__ = [
+    "HTTPStatusError",
+    "Hero",
+    "Item",
     "OpenDotaAsyncClient",
     "OpenDotaClientConfig",
     "OpenDotaError",
-    "HTTPStatusError",
     "RateLimitError",
-    "TransportError",
     "ResponseDecodeError",
-    "default_config",
+    "TransportError",
     "config_from_env",
-    "Item",
+    "default_config",
 ]

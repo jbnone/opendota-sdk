@@ -1,7 +1,8 @@
 """Public client interface for the OpenDota API."""
 
 import logging
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 
 from opendota_sdk._config import OpenDotaClientConfig
 from opendota_sdk.assembler import Assembler
@@ -106,14 +107,28 @@ class OpenDotaAsyncClient(ClientLogicMixin):
         raw_items = await self._constants.get_items()
         return self._assembler.list_items(raw_items)
 
+    async def get_item(
+        self, *, item_id: int | None = None, item_name: str | None = None
+    ) -> Item | None:
+        """Fetch a single item by id or name, or None if it doesn't exist."""
+        raw_item = await self._constants.get_item(item_id=item_id, item_name=item_name)
+        if raw_item is None:
+            return None
+        return self._assembler.get_item(raw_item)
+
     async def close(self) -> None:
         """Close the client and release resources."""
         await self._transport.close()
 
-    async def __aenter__(self) -> "OpenDotaAsyncClient":
+    async def __aenter__(self) -> Self:
         """Async context manager entry."""
         return self
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         """Async context manager exit and close the client."""
         await self.close()

@@ -299,9 +299,13 @@ Use the existing toolchain:
 
 ```bash
 uv run pytest
+uv run ruff check
+uv run ty check
 ```
 
 For narrower work, run the smallest relevant subset first.
+
+Always run `ruff check` and `ty check` on any file you touch and resolve issues before considering the work done, not just `pytest`. Pre-existing issues in files you did not touch may be left alone but should be called out rather than silently ignored.
 
 ---
 
