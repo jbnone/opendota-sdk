@@ -1,8 +1,9 @@
 """Tests for configuration handling."""
 
 import os
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from opendota_sdk._config import OpenDotaClientConfig, config_from_env
 

@@ -1,8 +1,8 @@
 """Tests for HTTP transport layer."""
 
-import pytest
-from unittest.mock import MagicMock, patch, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import pytest
 
 from opendota_sdk._config import OpenDotaClientConfig
 from opendota_sdk._errors import (
@@ -12,8 +12,8 @@ from opendota_sdk._errors import (
 from opendota_sdk.http._auth import AuthHandler
 from opendota_sdk.http._retry import RetryPolicy
 from opendota_sdk.http._transport import (
-    HTTPTransportBase,
     AsyncHTTPTransport,
+    HTTPTransportBase,
 )
 
 
@@ -170,13 +170,9 @@ async def test_async_close():
     with patch("opendota_sdk.http._transport.niquests.AsyncSession"):
         transport = AsyncHTTPTransport(config, auth, retry)
 
-        close_called = []
-
-        async def mock_close():
-            close_called.append(True)
-
+        mock_close = AsyncMock()
         transport._session.close = mock_close
 
         await transport.close()
 
-        assert len(close_called) > 0
+        mock_close.assert_called_once()

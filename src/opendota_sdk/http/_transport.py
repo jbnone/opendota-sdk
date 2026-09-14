@@ -1,7 +1,8 @@
 """HTTP transport layer for OpenDota API requests."""
 
 import json
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 from urllib.parse import urljoin
 
 import niquests
@@ -16,7 +17,6 @@ from opendota_sdk._errors import (
 
 from ._auth import AuthHandler
 from ._retry import RetryPolicy, build_retry_decorator
-
 
 _DEFAULT_HEADERS = {"Accept": "application/json"}
 
@@ -293,10 +293,15 @@ class AsyncHTTPTransport(HTTPTransportBase):
         if self._session is not None:
             await self._session.close()
 
-    async def __aenter__(self) -> "AsyncHTTPTransport":
+    async def __aenter__(self) -> Self:
         """Async context manager entry."""
         return self
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         """Async context manager exit and close the session."""
         await self.close()

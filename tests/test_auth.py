@@ -1,8 +1,9 @@
 """Tests for authentication handler."""
 
 import os
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from opendota_sdk.http._auth import AuthHandler
 
