@@ -428,6 +428,9 @@ For narrower work, run the smallest relevant subset first.
 
 Always run `ruff check` and `ty check` on any file you touch and resolve issues before considering the work done, not just `pytest`. Pre-existing issues in files you did not touch may be left alone but should be called out rather than silently ignored.
 
+`ruff check` includes the pydocstyle (`D`) rules in Google convention, so a new public
+member without a docstring, or an `Args:` section that omits a parameter, fails lint (§10.4).
+
 ---
 
 ## 10. Contribution Rules
@@ -463,7 +466,27 @@ Ask:
   (`Hero.innate_abilities`, `HeroStats.pub_win_rate`, `HeroBracketStats.win_rate`), returning `None`
   rather than raising or guessing when the inputs don't support an answer.
 
-### 10.4 Documentation Discipline
+### 10.4 Docstring Conventions
+
+All docstrings use **Google style**. This is enforced by ruff (`D` rules with
+`convention = "google"` in `pyproject.toml`; `tests/` is exempt) and is the format the
+planned MkDocs + mkdocstrings site will render, so it is not a stylistic preference.
+
+- every public module, class, method, property, and function in `src/` has a docstring —
+  ruff rejects missing ones, so a bare `ruff check` pass is the floor, not the goal
+- dataclass models document their fields in an `Attributes:` section on the class docstring,
+  not as `#` comments next to the fields; keep the entries in field order
+- methods with parameters have an `Args:` section; anything returning a value has a
+  `Returns:`; anything that deliberately raises has a `Raises:` listing the SDK error type
+  (`OpenDotaError`, `ValueError`, ...) — the `get_*` methods on `OpenDotaAsyncClient` and
+  the properties on `HeroStats` are the reference examples
+- inline code uses single Markdown backticks (`` `Hero.get_stats()` ``), not reST double
+  backticks, because the docs toolchain is Markdown-based
+- prefer stating the contract callers depend on (`None` when the bracket has no picks;
+  `False` means the item has no cooldown) over restating the type annotation
+- internal (`_`-prefixed) modules follow the same format; they just are not rendered
+
+### 10.5 Documentation Discipline
 
 When the architecture changes, update:
 
@@ -518,6 +541,8 @@ If the implementation changes materially, update this file in the same work.
    `/itemPopularity`) one at a time, hand-rolled per §7, and let the per-key caching need that emerges
    there decide whether a shared abstraction is warranted.
 6. `README.md` still documents none of this — it is badges and a one-line description only.
+7. Generate a docs site with MkDocs + Material + mkdocstrings (decided, not yet scaffolded).
+   The Google-style docstrings on the public API (§10.4) are the input; keep them accurate.
 
 ---
 

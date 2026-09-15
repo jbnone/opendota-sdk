@@ -1,8 +1,15 @@
+"""Hero-related enumerations exposed on `Hero` and `HeroStats` models."""
+
 from enum import IntEnum, StrEnum
 
 
 class HeroSkillBracket(IntEnum):
-    """Dota 2 rank medal tiers, used by OpenDota to bucket pick/win statistics."""
+    """Dota 2 rank medal tiers, used by OpenDota to bucket pick/win statistics.
+
+    Values match the numeric prefixes of the `/heroStats` bracket keys (`1_pick`,
+    `1_win`, ...). `IMMORTAL` is always reported as zero picks and wins, since OpenDota
+    withholds that bracket from the public API.
+    """
 
     HERALD = 1
     GUARDIAN = 2
@@ -36,7 +43,10 @@ class HeroAttackType(StrEnum):
 
 
 class HeroPrimaryAttribute(StrEnum):
-    """A hero's primary stat, which scales their damage output."""
+    """A hero's primary stat, which scales their damage output.
+
+    `ALL` denotes universal heroes, whose damage scales with every attribute.
+    """
 
     STRENGTH = "str"
     AGILITY = "agi"

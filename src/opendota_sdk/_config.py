@@ -9,8 +9,8 @@ class OpenDotaClientConfig:
     """Configuration for OpenDota API client.
 
     Attributes:
-        api_key: Optional API key for authentication. If not provided, checks
-            OPENDOTA_API_KEY environment variable.
+        api_key: Optional API key for authentication. If not provided, the client
+            falls back to the `OPENDOTA_API_KEY` environment variable.
         base_url: Base URL for the OpenDota API.
         timeout: Request timeout in seconds.
         max_retries: Maximum number of retries for failed requests.
@@ -34,7 +34,18 @@ class OpenDotaClientConfig:
     trust_env: bool = True
 
     def merge_other(self, other: "OpenDotaClientConfig") -> "OpenDotaClientConfig":
-        """Merge another config into this one, with the other config taking precedence."""
+        """Merge another config into this one, with the other config taking precedence.
+
+        Falsy values on `other` (`None`, `0`, `""`, `[]`) fall back to this config's
+        value, except `verify_ssl` and `trust_env`, which are always taken from `other`.
+        `extra_headers` are combined, with `other`'s keys winning on conflict.
+
+        Args:
+            other: The config whose set values should override this one's.
+
+        Returns:
+            A new `OpenDotaClientConfig`; neither input is modified.
+        """
         return OpenDotaClientConfig(
             api_key=other.api_key or self.api_key,
             base_url=other.base_url or self.base_url,

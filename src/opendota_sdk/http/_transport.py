@@ -69,7 +69,8 @@ class HTTPTransportBase:
         """Build request headers by merging defaults, config, and extra headers.
 
         Args:
-            extra_headers: Additional headers to include in the request.
+            request_headers: Additional headers to include in this request. They
+                override both the defaults and the config's `extra_headers`.
 
         Returns:
             The merged headers dictionary.
