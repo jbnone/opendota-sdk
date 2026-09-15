@@ -6,11 +6,12 @@ from types import TracebackType
 from typing import Any, Self
 
 from opendota_sdk._config import OpenDotaClientConfig
+from opendota_sdk._context import bind_client, unbind_client
 from opendota_sdk.assembler import Assembler
 from opendota_sdk.http._auth import AuthHandler
 from opendota_sdk.http._retry import RetryPolicy
 from opendota_sdk.http._transport import AsyncHTTPTransport
-from opendota_sdk.models import Hero, Item
+from opendota_sdk.models import Hero, HeroStats, Item
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,11 @@ class OpenDotaAsyncClient:
         self._items_by_id: dict[int, Item] = {}
         self._items_by_name: dict[str, Item] = {}
         self._items_lock = asyncio.Lock()
+
+        self._hero_stats_cache: list[HeroStats] | None = None
+        self._hero_stats_by_id: dict[int, HeroStats] = {}
+        self._hero_stats_by_name: dict[str, HeroStats] = {}
+        self._hero_stats_lock = asyncio.Lock()
 
     async def _get(
         self,
@@ -163,6 +169,33 @@ class OpenDotaAsyncClient:
             return self._heroes_by_id.get(hero_id)
         return self._heroes_by_name.get(hero_name)
 
+    async def get_hero_stats(self) -> list[HeroStats]:
+        """Retrieve live pick/win statistics for all heroes, cached per client."""
+        if self._hero_stats_cache is None:
+            async with self._hero_stats_lock:
+                if self._hero_stats_cache is None:
+                    raw_stats = await self._get("/heroStats")
+                    stats = self._assembler.list_hero_stats(raw_stats)
+                    self._hero_stats_by_id = {stat.hero_id: stat for stat in stats}
+                    self._hero_stats_by_name = {stat.hero_name: stat for stat in stats}
+                    self._hero_stats_cache = stats
+
+        return list(self._hero_stats_cache)
+
+    async def get_hero_stat(
+        self, *, hero_id: int | None = None, hero_name: str | None = None
+    ) -> HeroStats | None:
+        """Fetch a single hero's statistics by id or name, or None if it doesn't exist."""
+        if hero_id is None and hero_name is None:
+            raise ValueError("Either hero_id or hero_name must be provided.")
+        if hero_id is not None and hero_name is not None:
+            raise ValueError("Provide either hero_id or hero_name, not both.")
+
+        await self.get_hero_stats()
+        if hero_id is not None:
+            return self._hero_stats_by_id.get(hero_id)
+        return self._hero_stats_by_name.get(hero_name)
+
     async def get_items(self) -> list[Item]:
         """Fetch all items from the OpenDota constants endpoint, cached per client."""
         if self._items_cache is None:
@@ -193,12 +226,21 @@ class OpenDotaAsyncClient:
             return self._items_by_id.get(item_id)
         return self._items_by_name.get(item_name)
 
+    def activate(self) -> None:
+        """Bind this client to the current context outside of `async with`."""
+        bind_client(self)
+
+    def deactivate(self) -> None:
+        """Undo the most recent activate() in the current context."""
+        unbind_client()
+
     async def close(self) -> None:
         """Close the client and release resources."""
         await self._transport.close()
 
     async def __aenter__(self) -> Self:
-        """Async context manager entry."""
+        """Async context manager entry, binding this client for model relationships."""
+        bind_client(self)
         return self
 
     async def __aexit__(
@@ -208,4 +250,5 @@ class OpenDotaAsyncClient:
         exc_tb: TracebackType | None,
     ) -> None:
         """Async context manager exit and close the client."""
+        unbind_client()
         await self.close()

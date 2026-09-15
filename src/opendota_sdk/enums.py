@@ -1,4 +1,18 @@
-from enum import StrEnum
+from enum import IntEnum, StrEnum
+
+
+class HeroSkillBracket(IntEnum):
+    """Dota 2 rank medal tiers, used by OpenDota to bucket pick/win statistics."""
+
+    HERALD = 1
+    GUARDIAN = 2
+    CRUSADER = 3
+    ARCHON = 4
+    LEGEND = 5
+    ANCIENT = 6
+    DIVINE = 7
+    # OpenDota reports zeroes here; Immortal bracket data is withheld from the public API.
+    IMMORTAL = 8
 
 
 class HeroRole(StrEnum):

@@ -1,7 +1,7 @@
 # OpenDota SDK — Agent Instructions
 
 **Status**: Alpha, architecture still settling  
-**Current focus**: Async client foundation, item domain vertical slice, hero model flow  
+**Current focus**: Async client foundation, item domain vertical slice, hero model flow, hero stats slice  
 **Design direction**: Domain-focused SDK with transparent constant enrichment
 
 ---
@@ -31,6 +31,9 @@ from opendota_sdk import OpenDotaAsyncClient
 async with OpenDotaAsyncClient() as client:
     heroes = await client.get_heroes()
     items = await client.get_items()
+
+    hero = await client.get_hero(hero_name="npc_dota_hero_antimage")
+    stats = await hero.get_stats()  # relationship method, see §6.2
 ```
 
 Rules:
@@ -38,6 +41,9 @@ Rules:
 - The SDK is **async-only**.
 - Do **not** add or reintroduce a synchronous client.
 - Do **not** instruct contributors to build around a `Session` class unless that work explicitly introduces it.
+- Entering the client as an async context manager also binds it as the **active client** for model
+  relationship methods (§6.2). `client.activate()`/`client.deactivate()` do the same outside
+  `async with`, for scripts and notebooks.
 
 ### 2.2 Current Domain Coverage
 
@@ -45,7 +51,9 @@ Implemented today:
 
 - item constants flow via `get_items()`
 - hero list flow via `get_heroes()` returning typed `Hero` models
-- typed `Item` and `Hero` models
+- hero statistics flow via `get_hero_stats()`/`get_hero_stat()` returning typed `HeroStats` models
+- one relationship method, `Hero.get_stats()`, resolved through an ambient client (§6.2)
+- typed `Item`, `Hero`, and `HeroStats` models
 - internal transport, auth, retry, and error layers
 
 Planned but not implemented yet:
@@ -54,7 +62,8 @@ Planned but not implemented yet:
 - match domain objects
 - service-per-resource architecture
 - session container abstraction
-- generalized relationship navigation
+- relationship navigation beyond the single `Hero.get_stats()` case — no descriptor, query,
+  or resource-graph machinery exists, and none should be added speculatively (§6.2, §11)
 
 When writing code or instructions, be explicit about whether something is **current** or **target architecture**.
 
@@ -77,6 +86,13 @@ concurrent calls both triggering a fetch before either populates the cache. Both
 `get_heroes()` return a fresh copy of the cached list on every call, so mutating a returned list never
 corrupts the cache; the objects inside are frozen dataclasses, so sharing references to them across calls
 is safe.
+
+`get_hero_stats()`/`get_hero_stat()` use that identical cache+lock+index shape even though `/heroStats`
+is live aggregate data rather than patch-gated constants. That is deliberate: the lock **is** the
+single-flight mechanism, so `asyncio.gather(*(hero.get_stats() for hero in heroes))` over every hero
+collapses to one HTTP request instead of one per hero. Dropping the cache to keep the numbers fresh
+would silently turn that into N requests. If staleness ever matters, add an explicit refresh or TTL —
+do not simply remove the cache.
 
 ---
 
@@ -108,7 +124,8 @@ This principle is strongest today in the item flow and should guide future work.
 - client entry points are always async
 - do not add sync mirrors for convenience
 
-If a future domain object needs network access, that method should be async.
+Domain objects that need network access expose it as an async method — `Hero.get_stats()` is the
+first and currently only instance (§6.2).
 
 ### 3.3 Internal Enrichment
 
@@ -118,6 +135,8 @@ Current examples:
 
 - `OpenDotaAsyncClient.get_items()` returns typed `Item` objects assembled from constants payloads
 - `OpenDotaAsyncClient.get_heroes()` merges `/heroes` with `/constants/heroes` and returns typed `Hero` models
+- `OpenDotaAsyncClient.get_hero_stats()` folds `/heroStats`'s flat `{bracket}_pick`/`{bracket}_win` keys
+  into typed `HeroBracketStats` entries and derives win rates, instead of exposing the raw numeric keys
 
 ### 3.4 Incremental Generalization
 
@@ -139,7 +158,12 @@ Public exports should be limited to stable, user-facing types such as:
 - `OpenDotaAsyncClient`
 - `OpenDotaClientConfig`
 - SDK error types
-- selected user-facing models like `Item`
+- selected user-facing models like `Item`, `Hero`, and `HeroStats`, plus the enums they expose
+  (`HeroSkillBracket` is exported because `HeroBracketStats.bracket` hands it to callers)
+
+The ambient-client helpers in `_context.py` are **not** exported: `active_client()`, `bind_client()`,
+and `unbind_client()` are internal. Users reach them through `async with client` or
+`client.activate()`.
 
 Avoid exporting internal helpers, registries, transport classes, or normalization machinery.
 
@@ -151,12 +175,13 @@ Avoid exporting internal helpers, registries, transport classes, or normalizatio
 src/opendota_sdk/
 ├── __init__.py          # Public exports only
 ├── _config.py           # Client and transport configuration
+├── _context.py          # Ambient active-client binding for model relationship methods
 ├── _errors.py           # SDK-specific exception types
 ├── _records.py          # Raw item record boundary before assembly
-├── assembler.py         # Item normalization and assembly
+├── assembler.py         # Item, hero, and hero-stats normalization and assembly
 ├── client.py            # OpenDotaAsyncClient (owns all raw fetching and caching)
 ├── enums.py             # Hero-related enums and shared enum types
-├── models.py            # Typed Item and Hero models, plus item enums
+├── models.py            # Typed Item, Hero, and HeroStats models, plus item enums
 └── http/
     ├── _auth.py         # Header-based auth handling
     ├── _retry.py        # Retry policy and decorator builder
@@ -169,6 +194,9 @@ Notes:
   zero consumers and zero tests since the day it was added — see §11. Do not assume `PlayerService`,
   `HeroService`, `BaseService`, or any resource/service module exists.
 - `models.py` currently contains public-facing dataclasses and item enums despite its generic name.
+- `_context.py` holds only the `ContextVar` machinery. It imports `OpenDotaAsyncClient` solely under
+  `TYPE_CHECKING`, which is what keeps `models.py` → `_context.py` and `client.py` → `models.py` free
+  of an import cycle. Preserve that when editing it.
 
 ---
 
@@ -210,6 +238,8 @@ When improving item behavior:
 ---
 
 ## 6. Hero Flow Guidance
+
+### 6.1 Hero Model Flow
 
 Heroes currently follow a lighter path than items, but it is no longer a bare pass-through.
 
@@ -259,6 +289,47 @@ Implications:
   convention would misrepresent the data. Empty list means no cost/cooldown; length > 1 means it scales
   by ability level; unparseable entries (~0.1% of real data, e.g. `"undefined"`) are skipped, not raised
 
+### 6.2 Hero Statistics And Relationship Navigation
+
+`/heroStats` returns live aggregate pick/win data. It repeats every `/constants/heroes` stat field —
+those duplicates are **discarded** during normalization, since `Hero` already owns them — and adds the
+parts that are actually new:
+
+- flat per-bracket keys `1_pick`/`1_win` … `8_pick`/`8_win`, folded by `Assembler._normalize_brackets()`
+  into `list[HeroBracketStats]` keyed by the `HeroSkillBracket` IntEnum (Herald=1 … Immortal=8).
+  Bracket 8 is present in the payload but **always zero** — OpenDota withholds Immortal data publicly.
+  It is kept rather than dropped because the key genuinely exists; `win_rate` returns `None` when
+  `picks == 0`.
+- `pub_*`/`turbo_*` totals plus 7-element per-day trend arrays, and `pro_pick`/`pro_win`/`pro_ban`
+- computed `win_rate` properties on `HeroBracketStats` and `HeroStats` (`pub_`/`turbo_`/`pro_`), all
+  `None` when the matching pick count is zero
+
+`Hero.get_stats()` is the SDK's **only** relationship method today. It resolves its client from a
+`ContextVar` in `_context.py` rather than holding one:
+
+- `OpenDotaAsyncClient.__aenter__` calls `bind_client(self)`; `__aexit__` calls `unbind_client()`.
+  `activate()`/`deactivate()` expose the same thing outside `async with`.
+- `active_client()` raises `OpenDotaError` with actionable text when nothing is bound, so calling
+  `hero.get_stats()` outside a client scope fails loudly instead of silently.
+- the method body is a one-line delegation to `client.get_hero_stat(hero_id=self.id)`. The client
+  stays the only owner of fetching, caching, and normalization — relationship methods add no logic.
+
+Why this shape, so it is not re-litigated:
+
+- **models hold no client reference.** An earlier design stamped `_client` onto each `Hero` via
+  `dataclasses.replace`. It was rejected because it produced two behavioural modes of the same type:
+  structurally identical heroes where `get_stats()` worked on one and raised on the other, depending
+  on invisible provenance. With the ambient binding every `Hero` behaves identically and success
+  depends on *where* you call, not *which object* you hold.
+- **the token stack is itself context-local.** `_token_stack` is a `ContextVar`, not an instance
+  attribute, because two tasks sharing one client would otherwise pop each other's tokens and raise
+  `Token was created in a different Context`. Nesting restores the outer client correctly.
+- **`Hero` stays frozen with no new fields** — only methods were added, so equality, the assembler,
+  and the `_make_heroes` pipeline are untouched. `Assembler` remains completely client-unaware, and
+  `test_heroes_fixture.py` still drives `_make_heroes()` directly with no client in sight.
+- no scope/handle object (`client.hero(id).get_stats()`) and no query/source/descriptor layer exists.
+  Both were considered and rejected as more machinery than one relationship justifies; see §11.
+
 ---
 
 ## 7. Future Architecture Direction
@@ -271,9 +342,15 @@ If future work introduces:
 - `PlayerService`
 - `MatchService`
 - `HeroService`
-- domain objects that own async relationship methods
+- further domain objects that own async relationship methods, beyond `Hero.get_stats()` (§6.2)
 
 then that work should be introduced deliberately, with tests and updated docs, rather than implied by the instructions file alone.
+
+`Hero.get_stats()` was introduced exactly that way and is the template to copy: declare the client
+method that owns the fetch, then add a one-line delegating async method on the model. A second and
+third relationship should be written the same hand-rolled way. Only once that delegation has visibly
+repeated — and once per-key endpoints like `/heroes/{id}/matchups` force per-key single-flight, which
+the current bulk cache+lock does not cover — is a shared abstraction worth extracting.
 
 Until then:
 
@@ -316,8 +393,11 @@ Existing coverage includes:
 - auth behavior
 - retry behavior
 - transport behavior
-- item assembly
-- item constants registry behavior
+- item assembly, plus a regression sweep over every real item (`test_items_fixture.py`)
+- hero merge/assembly, plus a regression sweep over every real hero (`test_heroes_fixture.py`)
+- hero stats assembly (bracket folding, win rates, required-field errors)
+- ambient client binding and `Hero.get_stats()` (`test_context.py`), including nesting, the
+  unbound-client error, and the gather-collapses-to-one-request property
 - async client behavior
 
 Do not rewrite the test structure preemptively unless there is a clear payoff.
@@ -328,8 +408,9 @@ For changes in the item or hero flow, prefer focused tests near the current patt
 
 - raw record parsing tests
 - assembler normalization tests
-- constants registry tests
-- client-level async behavior tests
+- client-level async behavior tests, including the cache/single-flight behavior under `asyncio.gather`
+- for any new relationship method: that it raises without an active client, and that it delegates to
+  the owning client method rather than reimplementing a fetch
 
 If future player or match domains are added, test the vertical slice that actually exists rather than only internal helpers.
 
@@ -371,10 +452,16 @@ Ask:
 - use dataclasses for typed domain data
 - keep value-like models predictable
 - if a model is meant to represent static game data, consider immutability deliberately, but do not change mutability casually without checking current usage
-- `Item`, `Hero`, `ItemAbility`, `HeroAbility`, `HeroTalent`, and `Attribute` are all `frozen=True` — a
+- `Item`, `Hero`, `ItemAbility`, `HeroAbility`, `HeroTalent`, `HeroStats`, `HeroBracketStats`, and
+  `Attribute` are all `frozen=True` — a
   deliberate decision (nothing in the codebase mutated a constructed instance, verified before freezing).
   Note this only blocks reassigning a field; it does not make nested `list`/`dict` fields (e.g. `raw`,
   `abilities`) immutable, and `hash()` on these models will raise since they hold unhashable list fields.
+- models may own async relationship methods (§6.2) but must **not** own a client field. Keeping
+  provenance out of the data is what makes two identically-built models interchangeable.
+- derived values that callers would otherwise compute by hand belong on the model as properties
+  (`Hero.innate_abilities`, `HeroStats.pub_win_rate`, `HeroBracketStats.win_rate`), returning `None`
+  rather than raising or guessing when the inputs don't support an answer.
 
 ### 10.4 Documentation Discipline
 
@@ -401,6 +488,14 @@ When editing this project, do not introduce instruction drift in these areas:
 - do not reintroduce a `ConstantsRegistry`/`constants.py`-style raw-cache layer without a concrete
   need — it was removed for being a redundant cache with no consumer beyond the client itself
 - do not claim player or match domain objects exist until they do
+- do not give models a `_client` field, or stamp one on with `dataclasses.replace`, to make
+  relationship methods work — that design was evaluated and rejected (§6.2); the ambient `ContextVar`
+  in `_context.py` is the mechanism
+- do not document or scaffold a scope/handle layer (`client.hero(id).get_stats()`) or a
+  query/source/executor layer as existing — both were designed out in favor of plain client methods
+  plus one-line delegating model methods
+- do not remove the `get_hero_stats()` cache in the name of freshness without replacing the
+  single-flight it provides (§2.3)
 - do not move examples ahead of implementation reality
 
 If the implementation changes materially, update this file in the same work.
@@ -413,6 +508,10 @@ If the implementation changes materially, update this file in the same work.
 2. Continue polishing the item domain slice as the reference architecture.
 3. Improve the hero flow without prematurely forcing a generalized service layer.
 4. Introduce new domain entities only when their owning fetch, enrichment, and model path is clear.
+5. Add the remaining hero-scoped endpoints (`/heroes/{id}/matchups`, `/durations`, `/players`,
+   `/itemPopularity`) one at a time, hand-rolled per §7, and let the per-key caching need that emerges
+   there decide whether a shared abstraction is warranted.
+6. `README.md` still documents none of this — it is badges and a one-line description only.
 
 ---
 

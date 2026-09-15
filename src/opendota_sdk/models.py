@@ -2,7 +2,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttribute, HeroRole
+from opendota_sdk._context import active_client
+from opendota_sdk.enums import (
+    HeroAttackType,
+    HeroPrimaryAttribute,
+    HeroRole,
+    HeroSkillBracket,
+)
 
 
 class ItemQuality(str, Enum):
@@ -161,6 +167,60 @@ class HeroAbility:
 
 
 @dataclass(frozen=True)
+class HeroBracketStats:
+    """Pick/win counts for one hero in one skill bracket."""
+
+    bracket: HeroSkillBracket
+    picks: int
+    wins: int
+
+    @property
+    def win_rate(self) -> float | None:
+        """Wins as a fraction of picks, or None when the bracket has no picks."""
+        return self.wins / self.picks if self.picks else None
+
+
+@dataclass(frozen=True)
+class HeroStats:
+    """Live aggregate pick/win statistics for a hero, from /heroStats."""
+
+    hero_id: int
+    hero_name: str
+
+    brackets: list[HeroBracketStats] = field(default_factory=list)
+    pub_picks: int = 0
+    pub_wins: int = 0
+    turbo_picks: int = 0
+    turbo_wins: int = 0
+    pro_picks: int = 0
+    pro_wins: int = 0
+    pro_bans: int = 0
+
+    # Per-day counts, most recent last.
+    pub_picks_trend: list[int] = field(default_factory=list)
+    pub_wins_trend: list[int] = field(default_factory=list)
+    turbo_picks_trend: list[int] = field(default_factory=list)
+    turbo_wins_trend: list[int] = field(default_factory=list)
+
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @property
+    def pub_win_rate(self) -> float | None:
+        return self.pub_wins / self.pub_picks if self.pub_picks else None
+
+    @property
+    def turbo_win_rate(self) -> float | None:
+        return self.turbo_wins / self.turbo_picks if self.turbo_picks else None
+
+    @property
+    def pro_win_rate(self) -> float | None:
+        return self.pro_wins / self.pro_picks if self.pro_picks else None
+
+    def as_dict(self) -> dict[str, Any]:
+        return dict(self.raw)
+
+
+@dataclass(frozen=True)
 class Hero:
     """Dota 2 Hero enriched with constants, abilities, talents, and lore."""
 
@@ -210,6 +270,10 @@ class Hero:
     @property
     def innate_abilities(self) -> list[HeroAbility]:
         return [ability for ability in self.abilities if ability.is_innate]
+
+    async def get_stats(self) -> HeroStats | None:
+        """Fetch this hero's live pick/win statistics via the active client."""
+        return await active_client().get_hero_stat(hero_id=self.id)
 
     def as_dict(self) -> dict[str, Any]:
         return dict(self.raw)

@@ -8,8 +8,13 @@ import pytest
 from opendota_sdk._config import OpenDotaClientConfig
 from opendota_sdk._errors import OpenDotaError
 from opendota_sdk.client import OpenDotaAsyncClient
-from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttribute, HeroRole
-from opendota_sdk.models import AbilityBehavior, Hero, HeroTalent, Item
+from opendota_sdk.enums import (
+    HeroAttackType,
+    HeroPrimaryAttribute,
+    HeroRole,
+    HeroSkillBracket,
+)
+from opendota_sdk.models import AbilityBehavior, Hero, HeroStats, HeroTalent, Item
 
 
 @pytest.mark.asyncio
@@ -444,3 +449,103 @@ async def test_get_items_handles_real_items_json_payload(real_items_json):
 
     assert len(items) == len(real_items_json)
     assert all(isinstance(item, Item) for item in items)
+
+
+_HERO_STATS_API = [
+    {
+        "id": 1,
+        "name": "npc_dota_hero_antimage",
+        "1_pick": 16301,
+        "1_win": 8008,
+        "pub_pick": 521236,
+        "pub_win": 259663,
+        "pro_pick": 2,
+        "pro_win": 1,
+        "pro_ban": 1,
+    },
+    {
+        "id": 2,
+        "name": "npc_dota_hero_axe",
+        "1_pick": 20863,
+        "1_win": 10969,
+        "pub_pick": 857075,
+        "pub_win": 432005,
+    },
+]
+
+
+@pytest.mark.asyncio
+async def test_get_hero_stats_returns_typed_models():
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(return_value=_HERO_STATS_API)
+
+        stats = await client.get_hero_stats()
+
+    assert len(stats) == 2
+    assert all(isinstance(entry, HeroStats) for entry in stats)
+    assert [entry.hero_name for entry in stats] == [
+        "npc_dota_hero_antimage",
+        "npc_dota_hero_axe",
+    ]
+    antimage = stats[0]
+    assert antimage.pub_picks == 521236
+    assert antimage.brackets[0].bracket is HeroSkillBracket.HERALD
+    client._get.assert_awaited_once_with("/heroStats")
+
+
+@pytest.mark.asyncio
+async def test_get_hero_stats_caches_and_returns_fresh_lists():
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(return_value=_HERO_STATS_API)
+
+        first = await client.get_hero_stats()
+        second = await client.get_hero_stats()
+
+    assert client._get.await_count == 1
+    assert first == second
+    assert first is not second
+
+    first.clear()
+    assert len(second) == 2
+
+
+@pytest.mark.asyncio
+async def test_get_hero_stats_concurrent_calls_fetch_once():
+    async def slow_get(path, **kwargs):
+        await asyncio.sleep(0.01)
+        return _HERO_STATS_API
+
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(side_effect=slow_get)
+
+        results = await asyncio.gather(client.get_hero_stats(), client.get_hero_stats())
+
+    assert client._get.await_count == 1
+    assert results[0] == results[1]
+
+
+@pytest.mark.asyncio
+async def test_get_hero_stat_by_id_and_name():
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(return_value=_HERO_STATS_API)
+
+        by_id = await client.get_hero_stat(hero_id=2)
+        by_name = await client.get_hero_stat(hero_name="npc_dota_hero_axe")
+        missing = await client.get_hero_stat(hero_id=999)
+
+    assert by_id is not None
+    assert by_id.hero_name == "npc_dota_hero_axe"
+    assert by_name == by_id
+    assert missing is None
+
+
+@pytest.mark.asyncio
+async def test_get_hero_stat_requires_exactly_one_identifier():
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(return_value=_HERO_STATS_API)
+
+        with pytest.raises(ValueError, match="Either hero_id or hero_name"):
+            await client.get_hero_stat()
+
+        with pytest.raises(ValueError, match="not both"):
+            await client.get_hero_stat(hero_id=1, hero_name="npc_dota_hero_antimage")

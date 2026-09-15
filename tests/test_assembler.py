@@ -5,7 +5,12 @@ import pytest
 from opendota_sdk._errors import OpenDotaError
 from opendota_sdk._records import ItemRecord
 from opendota_sdk.assembler import Assembler
-from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttribute, HeroRole
+from opendota_sdk.enums import (
+    HeroAttackType,
+    HeroPrimaryAttribute,
+    HeroRole,
+    HeroSkillBracket,
+)
 from opendota_sdk.models import (
     AbilityBehavior,
     DamageType,
@@ -997,3 +1002,110 @@ def test_normalize_hero_end_to_end_with_real_axe_fixtures(
     assert berserkers_call.cooldown == [18.0, 16.0, 14.0, 12.0]
     counter_helix = next(a for a in axe.abilities if a.name == "axe_counter_helix")
     assert counter_helix.cooldown == [0.3]
+
+
+_HERO_STATS_PAYLOAD = {
+    "id": 1,
+    "name": "npc_dota_hero_antimage",
+    "localized_name": "Anti-Mage",
+    "1_pick": 16301,
+    "1_win": 8008,
+    "2_pick": 53493,
+    "2_win": 26663,
+    "8_pick": 0,
+    "8_win": 0,
+    "turbo_picks": 255234,
+    "turbo_picks_trend": [46526, 28839, 33580],
+    "turbo_wins": 126981,
+    "turbo_wins_trend": [23352, 14425, 16661],
+    "pro_pick": 2,
+    "pro_win": 1,
+    "pro_ban": 1,
+    "pub_pick": 521236,
+    "pub_pick_trend": [98152, 60914, 67692],
+    "pub_win": 259663,
+    "pub_win_trend": [48829, 30383, 33809],
+}
+
+
+def test_normalize_hero_stats_builds_typed_model(assembler):
+    stats = assembler.normalize_hero_stats(_HERO_STATS_PAYLOAD)
+
+    assert stats.hero_id == 1
+    assert stats.hero_name == "npc_dota_hero_antimage"
+    assert stats.pub_picks == 521236
+    assert stats.pub_wins == 259663
+    assert stats.turbo_picks == 255234
+    assert stats.turbo_wins == 126981
+    assert stats.pro_picks == 2
+    assert stats.pro_wins == 1
+    assert stats.pro_bans == 1
+    assert stats.pub_picks_trend == [98152, 60914, 67692]
+    assert stats.turbo_wins_trend == [23352, 14425, 16661]
+    assert stats.raw == _HERO_STATS_PAYLOAD
+    assert stats.as_dict() == _HERO_STATS_PAYLOAD
+
+
+def test_normalize_hero_stats_folds_flat_bracket_keys_into_typed_entries(assembler):
+    stats = assembler.normalize_hero_stats(_HERO_STATS_PAYLOAD)
+
+    brackets = {entry.bracket: entry for entry in stats.brackets}
+    assert set(brackets) == {
+        HeroSkillBracket.HERALD,
+        HeroSkillBracket.GUARDIAN,
+        HeroSkillBracket.IMMORTAL,
+    }
+    assert brackets[HeroSkillBracket.HERALD].picks == 16301
+    assert brackets[HeroSkillBracket.HERALD].wins == 8008
+    # Immortal is present in the payload but always zeroed by the public API.
+    assert brackets[HeroSkillBracket.IMMORTAL].picks == 0
+    assert brackets[HeroSkillBracket.IMMORTAL].win_rate is None
+
+
+def test_normalize_hero_stats_computes_win_rates(assembler):
+    stats = assembler.normalize_hero_stats(_HERO_STATS_PAYLOAD)
+
+    assert stats.pub_win_rate == pytest.approx(259663 / 521236)
+    assert stats.turbo_win_rate == pytest.approx(126981 / 255234)
+    assert stats.pro_win_rate == pytest.approx(0.5)
+
+    herald = next(e for e in stats.brackets if e.bracket is HeroSkillBracket.HERALD)
+    assert herald.win_rate == pytest.approx(8008 / 16301)
+
+
+def test_normalize_hero_stats_win_rates_are_none_without_picks(assembler):
+    stats = assembler.normalize_hero_stats({"id": 1, "name": "npc_dota_hero_antimage"})
+
+    assert stats.brackets == []
+    assert stats.pub_win_rate is None
+    assert stats.turbo_win_rate is None
+    assert stats.pro_win_rate is None
+    assert stats.pub_picks == 0
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"name": "npc_dota_hero_antimage"},
+        {"id": 1},
+        {"id": None, "name": "npc_dota_hero_antimage"},
+        {"id": 1, "name": ""},
+    ],
+)
+def test_normalize_hero_stats_requires_id_and_name(assembler, payload):
+    with pytest.raises(OpenDotaError, match="Cannot build HeroStats"):
+        assembler.normalize_hero_stats(payload)
+
+
+def test_list_hero_stats_preserves_order_and_count(assembler):
+    second = {**_HERO_STATS_PAYLOAD, "id": 2, "name": "npc_dota_hero_axe"}
+
+    stats = assembler.list_hero_stats([_HERO_STATS_PAYLOAD, second])
+
+    assert [entry.hero_id for entry in stats] == [1, 2]
+
+
+def test_normalize_int_list_skips_unparseable_entries(assembler):
+    assert assembler._normalize_int_list([1, "2", None, "nope", 3.7]) == [1, 2, 3]
+    assert assembler._normalize_int_list(None) == []
+    assert assembler._normalize_int_list(5) == [5]

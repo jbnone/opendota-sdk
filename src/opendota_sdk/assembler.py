@@ -6,7 +6,12 @@ from typing import Any, TypeVar
 
 from opendota_sdk._errors import OpenDotaError
 from opendota_sdk._records import ItemRecord
-from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttribute, HeroRole
+from opendota_sdk.enums import (
+    HeroAttackType,
+    HeroPrimaryAttribute,
+    HeroRole,
+    HeroSkillBracket,
+)
 from opendota_sdk.models import (
     AbilityBehavior,
     Attribute,
@@ -14,6 +19,8 @@ from opendota_sdk.models import (
     Dispellable,
     Hero,
     HeroAbility,
+    HeroBracketStats,
+    HeroStats,
     HeroTalent,
     Item,
     ItemAbility,
@@ -217,6 +224,50 @@ class Assembler:
         """Build Hero models from merged /heroes + /constants/heroes payloads."""
         return [self.normalize_hero(merged) for merged in merged_heroes]
 
+    def normalize_hero_stats(self, raw: dict[str, Any]) -> HeroStats:
+        """Build a HeroStats model from a /heroStats entry."""
+        hero_id = self._normalize_int(raw.get("id"))
+        hero_name = self._normalize_str(raw.get("name"))
+        if hero_id is None or not hero_name:
+            raise OpenDotaError(
+                f"Cannot build HeroStats: missing or malformed id/name in payload {raw!r}"
+            )
+
+        return HeroStats(
+            hero_id=hero_id,
+            hero_name=hero_name,
+            brackets=self._normalize_brackets(raw),
+            pub_picks=self._require_int(raw.get("pub_pick")),
+            pub_wins=self._require_int(raw.get("pub_win")),
+            turbo_picks=self._require_int(raw.get("turbo_picks")),
+            turbo_wins=self._require_int(raw.get("turbo_wins")),
+            pro_picks=self._require_int(raw.get("pro_pick")),
+            pro_wins=self._require_int(raw.get("pro_win")),
+            pro_bans=self._require_int(raw.get("pro_ban")),
+            pub_picks_trend=self._normalize_int_list(raw.get("pub_pick_trend")),
+            pub_wins_trend=self._normalize_int_list(raw.get("pub_win_trend")),
+            turbo_picks_trend=self._normalize_int_list(raw.get("turbo_picks_trend")),
+            turbo_wins_trend=self._normalize_int_list(raw.get("turbo_wins_trend")),
+            raw=dict(raw),
+        )
+
+    def list_hero_stats(self, raw_stats: Sequence[dict[str, Any]]) -> list[HeroStats]:
+        """Build HeroStats models from a /heroStats payload."""
+        return [self.normalize_hero_stats(raw) for raw in raw_stats]
+
+    def _normalize_brackets(self, raw: dict[str, Any]) -> list[HeroBracketStats]:
+        """Fold the flat `{bracket}_pick`/`{bracket}_win` keys into typed entries."""
+        brackets: list[HeroBracketStats] = []
+        for bracket in HeroSkillBracket:
+            picks = self._normalize_int(raw.get(f"{bracket.value}_pick"))
+            wins = self._normalize_int(raw.get(f"{bracket.value}_win"))
+            if picks is None and wins is None:
+                continue
+            brackets.append(
+                HeroBracketStats(bracket=bracket, picks=picks or 0, wins=wins or 0)
+            )
+        return brackets
+
     def _require_bool(self, value: Any) -> bool:
         normalized = self._normalize_bool(value)
         return normalized if normalized is not None else False
@@ -396,6 +447,15 @@ class Assembler:
             enum_value
             for entry in self._normalize_str_list(value)
             if (enum_value := self._normalize_enum(entry, enum_type)) is not None
+        ]
+
+    def _normalize_int_list(self, value: Any) -> list[int]:
+        """Normalize a scalar or list of integers, skipping unparseable entries."""
+        entries = value if isinstance(value, list) else [value]
+        return [
+            normalized
+            for entry in entries
+            if (normalized := self._normalize_int(entry)) is not None
         ]
 
     def _normalize_float_list(self, value: Any) -> list[float]:

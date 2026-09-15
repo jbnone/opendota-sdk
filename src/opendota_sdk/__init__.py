@@ -11,7 +11,12 @@ from opendota_sdk._errors import (
     TransportError,
 )
 from opendota_sdk.client import OpenDotaAsyncClient
-from opendota_sdk.enums import HeroAttackType, HeroPrimaryAttribute, HeroRole
+from opendota_sdk.enums import (
+    HeroAttackType,
+    HeroPrimaryAttribute,
+    HeroRole,
+    HeroSkillBracket,
+)
 from opendota_sdk.models import (
     AbilityBehavior,
     Attribute,
@@ -19,6 +24,8 @@ from opendota_sdk.models import (
     Dispellable,
     Hero,
     HeroAbility,
+    HeroBracketStats,
+    HeroStats,
     HeroTalent,
     Item,
     ItemAbility,
@@ -38,8 +45,11 @@ __all__ = [
     "Hero",
     "HeroAbility",
     "HeroAttackType",
+    "HeroBracketStats",
     "HeroPrimaryAttribute",
     "HeroRole",
+    "HeroSkillBracket",
+    "HeroStats",
     "HeroTalent",
     "Item",
     "ItemAbility",
