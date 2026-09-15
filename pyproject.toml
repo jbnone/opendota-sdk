@@ -39,6 +39,15 @@ build-backend = "uv_build"
 dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
+    "pytest-cov==7.1.0",
     "ruff==0.16.7",
     "ty==0.0.80",
 ]
+
+[tool.coverage.run]
+source = ["src/opendota_sdk"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 90
