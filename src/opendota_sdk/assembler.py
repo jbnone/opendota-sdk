@@ -220,10 +220,6 @@ class Assembler:
             raw=dict(merged),
         )
 
-    def list_heroes(self, merged_heroes: Sequence[dict[str, Any]]) -> list[Hero]:
-        """Build Hero models from merged /heroes + /constants/heroes payloads."""
-        return [self.normalize_hero(merged) for merged in merged_heroes]
-
     def normalize_hero_stats(self, raw: dict[str, Any]) -> HeroStats:
         """Build a HeroStats model from a /heroStats entry."""
         hero_id = self._normalize_int(raw.get("id"))

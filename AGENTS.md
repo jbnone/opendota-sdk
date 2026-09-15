@@ -488,6 +488,12 @@ When editing this project, do not introduce instruction drift in these areas:
 - do not reintroduce a `ConstantsRegistry`/`constants.py`-style raw-cache layer without a concrete
   need — it was removed for being a redundant cache with no consumer beyond the client itself
 - do not claim player or match domain objects exist until they do
+- do not re-add `Assembler.list_heroes()` for symmetry with `list_items()`/`list_hero_stats()`. It was
+  removed because it could not do its job: it dropped `abilities_by_name`, so every hero it built got
+  ability *stubs* (`"antimage_blink"` → `"Antimage Blink"`, no description, behaviors, mana cost, or
+  cooldown). Heroes need the five-payload merge in `_make_heroes()` before normalization, so a
+  raw-payload list method is the wrong shape for that flow — items and hero stats each arrive as one
+  already-complete payload, heroes do not
 - do not give models a `_client` field, or stamp one on with `dataclasses.replace`, to make
   relationship methods work — that design was evaluated and rejected (§6.2); the ambient `ContextVar`
   in `_context.py` is the mechanism

@@ -749,14 +749,6 @@ def test_normalize_hero_ignores_unknown_extra_keys(assembler):
     assert hero.raw["some_future_field"] == "unexpected"
 
 
-def test_list_heroes_preserves_order_and_count(assembler):
-    second_hero = {**_MINIMAL_HERO_PAYLOAD, "id": 2, "name": "npc_dota_hero_axe"}
-
-    heroes = assembler.list_heroes([_MINIMAL_HERO_PAYLOAD, second_hero])
-
-    assert [hero.id for hero in heroes] == [1, 2]
-
-
 # --- Hero abilities / talents -------------------------------------------------------
 
 _BERSERKERS_CALL_RAW = {
