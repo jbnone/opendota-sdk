@@ -6,6 +6,10 @@ dist/
 wheels/
 *.egg-info
 
+# Docs build output
+site/
+docs/api/
+
 # MacOS
 .DS_Store
 

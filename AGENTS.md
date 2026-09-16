@@ -526,6 +526,10 @@ When editing this project, do not introduce instruction drift in these areas:
 - do not remove the `get_hero_stats()` cache in the name of freshness without replacing the
   single-flight it provides (§2.3)
 - do not move examples ahead of implementation reality
+- do not add `mkdocs`, `mkdocs-material`, `mkdocs-gen-files`, or `mkdocs-literate-nav`
+  back to the `docs` dependency group without a concrete need — the docs site runs on
+  Zensical deliberately (§13); the latest releases of the last two pull in a package
+  ("properdocs") this repo does not want as a dependency
 
 If the implementation changes materially, update this file in the same work.
 
@@ -541,13 +545,50 @@ If the implementation changes materially, update this file in the same work.
    `/itemPopularity`) one at a time, hand-rolled per §7, and let the per-key caching need that emerges
    there decide whether a shared abstraction is warranted.
 6. `README.md` still documents none of this — it is badges and a one-line description only.
-7. Generate a docs site with MkDocs + Material + mkdocstrings (decided, not yet scaffolded).
-   The Google-style docstrings on the public API (§10.4) are the input; keep them accurate.
+7. Docs site: scaffolded, see §13. Keep the Google-style docstrings on the public API
+   (§10.4) accurate — they're the site's actual content, not just source-level docs.
 
 ---
 
-## 13. References
+## 13. Documentation Site
+
+A generated docs site lives under `docs/` (`mkdocs.yml` at the repo root), built with
+**Zensical**, not `mkdocs` + `mkdocs-material`. This was a deliberate choice, not the
+default: MkDocs 1.x is effectively unmaintained (18+ months with no release) and its
+original maintainer is building an incompatible, closed-contribution "2.0" under the
+same package name; the real Material for MkDocs team has moved on to Zensical as its
+own Material-compatible successor. See `docs/gen_ref_pages.py`'s module docstring for
+the full account, including a real, hands-on-verified supply-chain caution: recent
+releases of `mkdocs-gen-files` and `mkdocs-literate-nav` pull in a package called
+`properdocs` that prints an urgent-sounding build-time warning. Do not add either
+package back as a dependency without re-reading that docstring first.
+
+Current shape:
+
+- `docs/gen_ref_pages.py` is a **plain pre-build script**, not a plugin — Zensical
+  doesn't support the mkdocs-gen-files plugin API. It writes real files to `docs/api/`
+  (gitignored, regenerated every build) from `opendota_sdk.__all__`, so the API
+  reference always matches the actual public surface regardless of which internal
+  module a symbol is defined in (`_config.py`, `_errors.py` included).
+- `mkdocs.yml` is read directly by Zensical (`zensical build -f mkdocs.yml`) in its
+  documented mkdocs-compatible mode — there is no separate `zensical.toml`. Don't add
+  one speculatively; migrate only if a feature genuinely needs the native config format.
+- The only docs dependencies are `zensical` and `mkdocstrings-python` — deliberately not
+  `mkdocs`, `mkdocs-material`, `mkdocs-gen-files`, or `mkdocs-literate-nav`. Zensical
+  reimplements literate-nav's `SUMMARY.md` convention natively and needs none of them.
+- CI (`docs` job in `.github/workflows/ci.yml`) runs `gen_ref_pages.py` then
+  `zensical build -f mkdocs.yml --strict`, which fails the build on broken cross-refs
+  or missing pages — same purpose as the item/hero regression fixtures serve for code.
+  On push to `main`, a separate `docs-deploy` job publishes to GitHub Pages via the
+  native Actions flow (`actions/upload-pages-artifact` + `actions/deploy-pages`), which
+  requires the repository's Pages source to be set to "GitHub Actions" once in repo
+  settings — not something CI or an agent can set on its own.
+
+---
+
+## 14. References
 
 - [OpenDota API Docs](https://docs.opendota.com/)
 - [dotaconstants Repository](https://github.com/odota/dotaconstants)
 - [Python AsyncIO Best Practices](https://docs.python.org/3/library/asyncio.html)
+- [Zensical Documentation](https://zensical.org/docs/)

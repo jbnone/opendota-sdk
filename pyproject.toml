@@ -43,6 +43,22 @@ dev = [
     "ruff==0.16.7",
     "ty==0.0.80",
 ]
+docs = [
+    # Zensical, not mkdocs + mkdocs-material: MkDocs 1.x is effectively unmaintained
+    # (see docs/gen_ref_pages.py's module docstring for the full story) and Material for
+    # MkDocs' own team has moved on to Zensical as its Material-compatible successor.
+    # It natively reads mkdocs.yml (see the file itself), so no config rewrite needed.
+    "zensical==0.0.62",
+    # The handler Zensical's built-in mkdocstrings support renders through. Only the
+    # bare handler package is needed -- not the `mkdocstrings` mkdocs-plugin package,
+    # which Zensical replaces internally, and not `mkdocs-gen-files` /
+    # `mkdocs-literate-nav`, which Zensical either reimplements natively (literate-nav)
+    # or doesn't support as a plugin at all (gen-files; see docs/gen_ref_pages.py, run
+    # as a plain pre-build step instead). Deliberately minimal: both of those two
+    # packages' latest releases pull in a dependency ("properdocs") that isn't wanted
+    # here, so the clean fix is not depending on either package at all.
+    "mkdocstrings-python==2.0.8",
+]
 
 [tool.coverage.run]
 source = ["src/opendota_sdk"]
