@@ -576,12 +576,14 @@ Current shape:
 - The only docs dependencies are `zensical` and `mkdocstrings-python` — deliberately not
   `mkdocs`, `mkdocs-material`, `mkdocs-gen-files`, or `mkdocs-literate-nav`. Zensical
   reimplements literate-nav's `SUMMARY.md` convention natively and needs none of them.
-- CI (`docs` job in `.github/workflows/ci.yml`) runs `gen_ref_pages.py` then
-  `zensical build -f mkdocs.yml --strict`, which fails the build on broken cross-refs
-  or missing pages — same purpose as the item/hero regression fixtures serve for code.
-  On push to `main`, a separate `docs-deploy` job publishes to GitHub Pages via the
-  native Actions flow (`actions/upload-pages-artifact` + `actions/deploy-pages`), which
-  requires the repository's Pages source to be set to "GitHub Actions" once in repo
+- CI lives in its own `.github/workflows/docs.yml`, separate from `ci.yml`, triggered
+  only by changes under `docs/`, `src/`, `mkdocs.yml`, or the dependency files. Its
+  `docs` job runs `gen_ref_pages.py` then `zensical build -f mkdocs.yml --strict`,
+  which fails the build on broken cross-refs or missing pages — same purpose as the
+  item/hero regression fixtures serve for code. On push to `main`, a separate
+  `docs-deploy` job publishes to GitHub Pages via the native Actions flow
+  (`actions/upload-pages-artifact` + `actions/deploy-pages`), which requires the
+  repository's Pages source to be set to "GitHub Actions" once in repo
   settings — not something CI or an agent can set on its own.
 
 ---

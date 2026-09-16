@@ -27,6 +27,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/jbnone/opendota-sdk"
+Documentation = "https://jbnone.github.io/opendota-sdk/"
 Issues = "https://github.com/jbnone/opendota-sdk/issues"
 Repository = "https://github.com/jbnone/opendota-sdk"
 
