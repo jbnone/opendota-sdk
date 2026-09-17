@@ -182,10 +182,11 @@ src/opendota_sdk/
 ├── client.py            # OpenDotaAsyncClient (owns all raw fetching and caching)
 ├── enums.py             # Hero-related enums and shared enum types
 ├── models.py            # Typed Item, Hero, and HeroStats models, plus item enums
+├── py.typed             # PEP 561 marker; the package ships as typed
 └── http/
     ├── _auth.py         # Header-based auth handling
     ├── _retry.py        # Retry policy and decorator builder
-    └── _transport.py    # Sync/async transport implementations
+    └── _transport.py    # Async HTTP transport over niquests (no sync transport)
 ```
 
 Notes:
@@ -379,6 +380,35 @@ Guidelines:
 - prefer typed SDK exceptions over generic `Exception`
 - do not silently swallow malformed data or HTTP failures
 
+### 8.1 Retry Behavior
+
+Retries live in `http/_retry.py` and are driven by `AsyncHTTPTransport.request()`. The
+contract, and why it is shaped this way:
+
+- `build_retry_decorator()` returns a tenacity **`AsyncRetrying`**. This is load-bearing,
+  not incidental: a synchronous `Retrying` handed an async callable returns the
+  un-awaited coroutine, so the retry predicate inspects a coroutine object, never
+  matches, and the real exception surfaces outside the retry loop. That bug shipped
+  once and made `max_retries`/`backoff_factor`/`retry_on_status` silently inert while
+  `docs/guides/errors.md` promised users automatic retries. Do not swap it back.
+- retries are decided **from the raised exception**, not from a returned response.
+  `handle_response()` raises on any non-2xx status *inside* the retried callable, so a
+  retryable status never comes back as a result — a `retry_if_result` predicate is
+  unreachable by construction here.
+- `TransportError` carries `is_timeout`, set by the transport, which catches
+  `niquests.Timeout` ahead of `niquests.RequestException` (`Timeout` subclasses it, so
+  the order matters). Without that flag `RetryPolicy.retry_on_timeout` cannot be honored,
+  because every niquests failure is flattened into one SDK error type.
+- `wait_exponential` uses `min=0` so `backoff_factor=0` genuinely means no wait. The
+  default (`0.5`) is unchanged by this.
+- each request drives a fresh `AsyncRetrying.copy()`. Attempt bookkeeping is per-call
+  even on a shared object, so this is defensive rather than a fix for a live bug — but
+  `statistics` *is* shared and clobbered across concurrent runs, and `get_heroes()` fans
+  five requests through one transport.
+- `tests/test_retry.py` counts calls against the underlying session. Attempt counts are
+  the assertion that catches this class of bug; asserting only on the raised type does
+  not.
+
 ---
 
 ## 9. Testing Strategy
@@ -525,6 +555,11 @@ When editing this project, do not introduce instruction drift in these areas:
   plus one-line delegating model methods
 - do not remove the `get_hero_stats()` cache in the name of freshness without replacing the
   single-flight it provides (§2.3)
+- do not replace `AsyncRetrying` with a synchronous `tenacity.Retrying`, and do not move the
+  retry predicate back to `retry_if_result` — both silently disable retries entirely while
+  leaving the config knobs and the docs looking correct (§8.1)
+- do not describe `_transport.py` as having a sync implementation. `HTTPTransportBase` exists
+  to share URL/header/response handling, not to leave room for a sync sibling (§2.1, §3.2)
 - do not move examples ahead of implementation reality
 - do not add `mkdocs`, `mkdocs-material`, `mkdocs-gen-files`, or `mkdocs-literate-nav`
   back to the `docs` dependency group without a concrete need — the docs site runs on
@@ -544,7 +579,9 @@ If the implementation changes materially, update this file in the same work.
 5. Add the remaining hero-scoped endpoints (`/heroes/{id}/matchups`, `/durations`, `/players`,
    `/itemPopularity`) one at a time, hand-rolled per §7, and let the per-key caching need that emerges
    there decide whether a shared abstraction is warranted.
-6. `README.md` still documents none of this — it is badges and a one-line description only.
+6. `README.md` still documents none of this — badges, a one-line description, and a link
+   out to the docs site. It is also the PyPI landing page (`readme = "README.md"`), so an
+   install line and the `async with` quickstart are the minimum worth adding.
 7. Docs site: scaffolded, see §13. Keep the Google-style docstrings on the public API
    (§10.4) accurate — they're the site's actual content, not just source-level docs.
 

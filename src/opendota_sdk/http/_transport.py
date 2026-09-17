@@ -24,7 +24,8 @@ _DEFAULT_HEADERS = {"Accept": "application/json"}
 class HTTPTransportBase:
     """Base class for HTTP transports.
 
-    Defines the interface and common functionality for both sync and async transports.
+    Defines the URL, header, and response-handling behavior shared by transports.
+    `AsyncHTTPTransport` is the only subclass; the SDK is async-only.
     """
 
     def __init__(

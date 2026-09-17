@@ -42,7 +42,7 @@ Calling `get_stats()` with no client active (outside `async with` / `activate()`
 
 ```python
 stats.pub_win_rate  # float | None — None when pub_picks is 0
-stats.pro_pick, stats.pro_win, stats.pro_ban
+stats.pro_picks, stats.pro_wins, stats.pro_bans
 stats.brackets  # list[HeroBracketStats], one per HeroSkillBracket
 ```
 
