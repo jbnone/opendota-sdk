@@ -8,7 +8,23 @@ class OpenDotaError(Exception):
 
 
 class TransportError(OpenDotaError):
-    """Raised when a transport-level error occurs (connection, timeout, etc.)."""
+    """Raised when a transport-level error occurs (connection, timeout, etc.).
+
+    Attributes:
+        is_timeout: `True` when the underlying failure was a request timeout rather
+            than another transport-level failure. Retries consult this to honor
+            `RetryPolicy.retry_on_timeout`.
+    """
+
+    def __init__(self, message: str = "", *, is_timeout: bool = False) -> None:
+        """Initialize TransportError.
+
+        Args:
+            message: A descriptive error message.
+            is_timeout: Whether the underlying failure was a request timeout.
+        """
+        self.is_timeout = is_timeout
+        super().__init__(message)
 
 
 class HTTPStatusError(OpenDotaError):

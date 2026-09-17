@@ -191,10 +191,13 @@ class AsyncHTTPTransport(HTTPTransportBase):
                     verify=self.config.verify_ssl,
                 )
                 return self.handle_response(response, method)
+            except niquests.Timeout as exc:
+                raise TransportError(
+                    f"Request timed out: {exc}", is_timeout=True
+                ) from exc
             except (
                 niquests.RequestException,
                 niquests.ConnectionError,
-                niquests.Timeout,
             ) as exc:
                 raise TransportError(f"Request failed: {exc}") from exc
             except RateLimitError:
@@ -203,7 +206,7 @@ class AsyncHTTPTransport(HTTPTransportBase):
                 raise
 
         try:
-            return await self._retry_decorator(_do_request)
+            return await self._retry_decorator.copy()(_do_request)
         except Exception as exc:
             if isinstance(exc, (RateLimitError, HTTPStatusError, TransportError)):
                 raise

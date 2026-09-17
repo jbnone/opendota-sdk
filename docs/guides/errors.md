@@ -21,7 +21,7 @@ for failures, not absent data.
 
 | Type | Raised when |
 |---|---|
-| [`TransportError`][opendota_sdk.TransportError] | A connection-level failure (DNS, timeout, refused connection). |
+| [`TransportError`][opendota_sdk.TransportError] | A connection-level failure (DNS, timeout, refused connection). Carries `is_timeout`, `True` when the request timed out rather than failing another way. |
 | [`HTTPStatusError`][opendota_sdk.HTTPStatusError] | The API responds with a non-2xx status. Carries `status_code`, `method`, `url`, `response_text`, and `headers`. |
 | [`RateLimitError`][opendota_sdk.RateLimitError] | The API responds 429. Carries `retry_after` when the response provides it. |
 | [`ResponseDecodeError`][opendota_sdk.ResponseDecodeError] | The response body isn't valid JSON. |
