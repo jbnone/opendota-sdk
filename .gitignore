@@ -16,3 +16,6 @@ docs/api/
 # Virtual environments
 .venv
 *.DS_Store
+
+# Tests
+.coverage
