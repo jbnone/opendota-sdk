@@ -713,14 +713,16 @@ What `ci.yml` does per trigger:
 |---|---|---|---|---|
 | pull request | none (`0.0.0`) | — | — | — |
 | push to `main` | `<last v tag>.post0.dev<run number>` | yes | — | — |
-| tag `v*` | the tag, normalised (`v0.1.0-alpha.8` → `0.1.0a8`) | yes | after TestPyPI | after PyPI |
+| tag `v*` | the tag, normalised (`v0.1.0-alpha.8` → `0.1.0a8`) | yes | in parallel with TestPyPI | after PyPI |
 
 - one build per run; the same files go to TestPyPI, PyPI, and the GitHub Release, after
   an import smoke test of the wheel in a clean environment
 - TestPyPI on every push to `main` is a deliberate health check of the publishing path
   (OIDC trust, the publish action, metadata acceptance). Renovate automerges action
   updates, so a broken publish shows up the same day rather than on release day.
-  `skip-existing` covers re-runs, which keep their run number
+  `skip-existing` covers re-runs, which keep their run number. On tags it runs in
+  parallel with PyPI rather than gating it, so a TestPyPI outage cannot block a release;
+  a failure there still turns the run red
 - the workflow triggers on **every** tag and fails tags without the `v` prefix, rather
   than ignoring them; `uv version` rejects tags that are not valid versions
 - release notes come from git-cliff (`release` dependency group, configured under
