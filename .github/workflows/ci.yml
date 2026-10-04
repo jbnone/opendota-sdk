@@ -141,7 +141,8 @@ jobs:
 
   pypi-publish:
     if: github.ref_type == 'tag'
-    needs: testpypi-publish
+    # Parallel to TestPyPI, not after it: a TestPyPI outage must not block a release.
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       id-token: write
