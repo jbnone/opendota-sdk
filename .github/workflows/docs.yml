@@ -3,6 +3,9 @@ name: docs
 on:
   push:
     branches: [ main ]
+    # Release tags deploy the site, so it documents what is on PyPI rather than main.
+    # GitHub does not evaluate the path filters below for tag pushes.
+    tags: [ 'v*' ]
     paths:
       - 'docs/**'
       - 'src/**'
@@ -20,18 +23,25 @@ on:
       - 'uv.lock'
       - '.github/workflows/docs.yml'
 
+permissions:
+  contents: read
+
 jobs:
   docs:
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
 
     - name: Install uv
       uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+      with:
+        enable-cache: false  # a poisoned cache must not reach published artifacts
 
     - name: Install dependencies
-      run: uv sync --group docs
+      run: uv sync --locked --group docs
 
     - name: Generate API reference pages
       run: uv run python docs/gen_ref_pages.py
@@ -40,18 +50,22 @@ jobs:
       run: uv run zensical build -f mkdocs.yml --strict
 
     - name: Upload docs artifact
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      if: github.ref_type == 'tag'
       uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
       with:
         path: site/
 
   docs-deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref_type == 'tag'
     needs: docs
     runs-on: ubuntu-latest
     permissions:
       pages: write
       id-token: write
+
+    concurrency:
+      group: pages
+      cancel-in-progress: false
 
     environment:
       name: github-pages
