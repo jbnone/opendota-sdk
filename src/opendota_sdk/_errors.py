@@ -75,20 +75,36 @@ class RateLimitError(OpenDotaError):
     """Raised when the API rate limit is exceeded (HTTP 429).
 
     Attributes:
-        retry_after: The number of seconds to wait before retrying, if provided.
+        retry_after: Seconds to wait before the limit clears, or `None` when the
+            response gives no way to tell. Taken from a `Retry-After` header when one
+            is sent; otherwise, for OpenDota's per-minute limit, it is the time left
+            until the next minute begins on the server's clock.
+        is_daily_limit: `True` when the daily request quota (keyless requests only)
+            is exhausted rather than the per-minute one. Waiting a minute will not
+            help, so these are never retried.
         message: A descriptive error message.
     """
 
-    def __init__(self, retry_after: int | None = None, message: str = "") -> None:
+    def __init__(
+        self,
+        retry_after: int | None = None,
+        message: str = "",
+        *,
+        is_daily_limit: bool = False,
+    ) -> None:
         """Initialize RateLimitError.
 
         Args:
             retry_after: The number of seconds to wait before retrying (optional).
             message: A descriptive error message (optional).
+            is_daily_limit: Whether the daily quota, not the per-minute one, was hit.
         """
         self.retry_after = retry_after
+        self.is_daily_limit = is_daily_limit
         if not message:
-            if retry_after:
+            if is_daily_limit:
+                message = "Daily request limit exceeded."
+            elif retry_after:
                 message = f"Rate limited. Retry after {retry_after} seconds."
             else:
                 message = "Rate limited."

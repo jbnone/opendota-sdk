@@ -19,6 +19,14 @@ class OpenDotaClientConfig:
         extra_headers: Extra headers to include in all requests.
         verify_ssl: Whether to verify SSL certificates.
         trust_env: Whether to trust environment settings for HTTP proxies, etc.
+        max_concurrency: Maximum number of requests in flight at once. Further
+            requests wait for a free slot. The default matches the HTTP connection
+            pool size, beyond which extra connections are opened and discarded rather
+            than reused. Must be at least 1.
+        max_retry_after: Longest wait, in seconds, the client will sit out before
+            retrying a rate-limited request. A 429 that asks for a longer wait is
+            raised immediately instead of retried, so a batch job never silently
+            stalls for hours.
     """
 
     api_key: str | None = None
@@ -32,6 +40,8 @@ class OpenDotaClientConfig:
     extra_headers: dict[str, str] = field(default_factory=dict)
     verify_ssl: bool = True
     trust_env: bool = True
+    max_concurrency: int = 10
+    max_retry_after: float = 120.0
 
     def merge_other(self, other: "OpenDotaClientConfig") -> "OpenDotaClientConfig":
         """Merge another config into this one, with the other config taking precedence.
@@ -60,6 +70,8 @@ class OpenDotaClientConfig:
             trust_env=other.trust_env
             if other.trust_env is not None
             else self.trust_env,
+            max_concurrency=other.max_concurrency or self.max_concurrency,
+            max_retry_after=other.max_retry_after or self.max_retry_after,
         )
 
 
@@ -80,6 +92,7 @@ def config_from_env() -> OpenDotaClientConfig:
         OPENDOTA_BASE_URL: Base URL for the API (default: https://api.opendota.com/api).
         OPENDOTA_TIMEOUT: Request timeout in seconds (default: 10.0).
         OPENDOTA_MAX_RETRIES: Maximum number of retries (default: 3).
+        OPENDOTA_MAX_CONCURRENCY: Maximum requests in flight at once (default: 10).
 
     Returns:
         An OpenDotaClientConfig populated from environment variables.
@@ -89,4 +102,5 @@ def config_from_env() -> OpenDotaClientConfig:
         base_url=os.getenv("OPENDOTA_BASE_URL", "https://api.opendota.com/api"),
         timeout=float(os.getenv("OPENDOTA_TIMEOUT", "10.0")),
         max_retries=int(os.getenv("OPENDOTA_MAX_RETRIES", "3")),
+        max_concurrency=int(os.getenv("OPENDOTA_MAX_CONCURRENCY", "10")),
     )

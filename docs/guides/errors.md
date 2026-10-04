@@ -23,7 +23,7 @@ for failures, not absent data.
 |---|---|
 | [`TransportError`][opendota_sdk.TransportError] | A connection-level failure (DNS, timeout, refused connection). Carries `is_timeout`, `True` when the request timed out rather than failing another way. |
 | [`HTTPStatusError`][opendota_sdk.HTTPStatusError] | The API responds with a non-2xx status. Carries `status_code`, `method`, `url`, `response_text`, and `headers`. |
-| [`RateLimitError`][opendota_sdk.RateLimitError] | The API responds 429. Carries `retry_after` when the response provides it. |
+| [`RateLimitError`][opendota_sdk.RateLimitError] | The API responds 429 and the client could not, or should not, wait it out. Carries `retry_after` (seconds, or `None` if unknown) and `is_daily_limit`. |
 | [`ResponseDecodeError`][opendota_sdk.ResponseDecodeError] | The response body isn't valid JSON. |
 
 `HTTPStatusError` and `RateLimitError` are more specific than a generic `TransportError`
@@ -35,7 +35,9 @@ from opendota_sdk import HTTPStatusError, RateLimitError
 try:
     items = await client.get_items()
 except RateLimitError as exc:
-    if exc.retry_after:
+    if exc.is_daily_limit:
+        ...  # waiting won't help today
+    elif exc.retry_after:
         ...
 except HTTPStatusError as exc:
     logger.error("OpenDota returned %s for %s %s", exc.status_code, exc.method, exc.url)
@@ -48,3 +50,22 @@ Transient failures (network errors, and the status codes configured in
 automatically before an error ever reaches your code, using exponential backoff
 controlled by `max_retries` and `backoff_factor`. See
 [Configuration](configuration.md) to tune this.
+
+## Rate limits
+
+OpenDota allows 60 requests a minute without an API key (300 with one), and 3,000 a day
+without a key. It does **not** send a `Retry-After` header when you exceed them, so the
+client works out the wait itself:
+
+- **Per-minute limit.** OpenDota's counter resets at the start of every minute, so the
+  client waits until then, measured on the server's clock from the response's `Date`
+  header. The wait applies to **every request on that client**, not just the one that
+  was rejected — the limit is counted per key or IP, so anything sent meanwhile would
+  be rejected too.
+- **Daily limit.** It cannot be waited out, so the `RateLimitError` is raised right away
+  with `is_daily_limit=True`.
+- **`Retry-After`**, if a proxy in front of the API sends one, is honored as-is.
+
+Each rate-limited retry still counts against `max_retries`. A wait longer than
+`max_retry_after` is never taken: the error is raised instead, with `retry_after` set so
+you can decide what to do.

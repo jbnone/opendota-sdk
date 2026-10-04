@@ -549,3 +549,26 @@ async def test_get_hero_stat_requires_exactly_one_identifier():
 
         with pytest.raises(ValueError, match="not both"):
             await client.get_hero_stat(hero_id=1, hero_name="npc_dota_hero_antimage")
+
+
+@pytest.mark.asyncio
+async def test_client_passes_concurrency_and_retry_after_to_the_transport():
+    client = OpenDotaAsyncClient(max_concurrency=3)
+    try:
+        assert client._config.max_concurrency == 3
+        assert client._transport._slots._value == 3
+        assert client._retry_policy.max_retry_after == 120.0
+    finally:
+        await client.close()
+
+    config = OpenDotaClientConfig(max_retry_after=45.0)
+    client = OpenDotaAsyncClient(config=config)
+    try:
+        assert client._retry_policy.max_retry_after == 45.0
+    finally:
+        await client.close()
+
+
+def test_client_rejects_non_positive_concurrency():
+    with pytest.raises(ValueError, match="max_concurrency must be at least 1"):
+        OpenDotaAsyncClient(max_concurrency=0)

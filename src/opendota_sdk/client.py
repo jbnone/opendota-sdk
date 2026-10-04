@@ -43,6 +43,7 @@ class OpenDotaAsyncClient:
         max_retries: int = 3,
         base_url: str | None = None,
         config: OpenDotaClientConfig | None = None,
+        max_concurrency: int = 10,
     ) -> None:
         """Create a client, either from keyword arguments or a full config object.
 
@@ -54,6 +55,10 @@ class OpenDotaAsyncClient:
             base_url: API base URL. Defaults to the public OpenDota API.
             config: A complete `OpenDotaClientConfig`. When given, it is used as-is and
                 the other arguments are ignored.
+            max_concurrency: Maximum number of requests in flight at once.
+
+        Raises:
+            ValueError: If `max_concurrency` (or the config's) is below 1.
         """
         if config is None:
             config = OpenDotaClientConfig(
@@ -61,6 +66,7 @@ class OpenDotaAsyncClient:
                 timeout=timeout,
                 max_retries=max_retries,
                 base_url=base_url or "https://api.opendota.com/api",
+                max_concurrency=max_concurrency,
             )
 
         self._config = config
@@ -69,6 +75,7 @@ class OpenDotaAsyncClient:
             max_retries=config.max_retries,
             backoff_factor=config.backoff_factor,
             retry_on_status=config.retry_on_status,
+            max_retry_after=config.max_retry_after,
         )
 
         self._transport = AsyncHTTPTransport(

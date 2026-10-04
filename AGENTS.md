@@ -54,7 +54,8 @@ Implemented today:
 - hero statistics flow via `get_hero_stats()`/`get_hero_stat()` returning typed `HeroStats` models
 - one relationship method, `Hero.get_stats()`, resolved through an ambient client (§6.2)
 - typed `Item`, `Hero`, and `HeroStats` models
-- internal transport, auth, retry, and error layers
+- internal transport, auth, retry, and error layers, including a per-client concurrency cap and
+  rate-limit handling that waits out OpenDota's per-minute window (§8.2)
 
 Planned but not implemented yet:
 
@@ -399,8 +400,12 @@ contract, and why it is shaped this way:
   `niquests.Timeout` ahead of `niquests.RequestException` (`Timeout` subclasses it, so
   the order matters). Without that flag `RetryPolicy.retry_on_timeout` cannot be honored,
   because every niquests failure is flattened into one SDK error type.
-- `wait_exponential` uses `min=0` so `backoff_factor=0` genuinely means no wait. The
-  default (`0.5`) is unchanged by this.
+- `wait_exponential` uses `min=0` so `backoff_factor=0` genuinely means no wait. This *did*
+  change the default: the first retry at `backoff_factor=0.5` now waits 0.5s instead of the
+  1.0s the old `min=1` floor forced; later waits (1s, 2s, …) are unchanged. An earlier
+  version of this file said the default was unaffected — it was wrong, and the test that
+  should have caught it computed its expected values by hand. `test_backoff_factor_scales_the_wait`
+  now asks tenacity for the real waits.
 - each request drives a fresh `AsyncRetrying.copy()`. Attempt bookkeeping is per-call
   even on a shared object, so this is defensive rather than a fix for a live bug — but
   `statistics` *is* shared and clobbered across concurrent runs, and `get_heroes()` fans
@@ -408,6 +413,52 @@ contract, and why it is shaped this way:
 - `tests/test_retry.py` counts calls against the underlying session. Attempt counts are
   the assertion that catches this class of bug; asserting only on the raised type does
   not.
+
+### 8.2 Concurrency Cap And Rate Limits
+
+**OpenDota never sends `Retry-After`.** Verified in its server source (`svc/web.ts`): a 429
+carries only a JSON error body and the `X-Rate-Limit-Remaining-Minute` / `-Day` headers. The
+minute counter is a fixed window that resets at every wall-clock minute boundary; limits are
+60/min keyless, 300/min with a key, and 3,000/day keyless (keyed requests are billed rather
+than refused). So "honor `Retry-After`" alone would be a no-op against the real API.
+`_rate_limit_details()` in `_transport.py` therefore resolves a 429 in this order:
+
+1. `X-Rate-Limit-Remaining-Day < 0` → daily quota; `is_daily_limit=True`, never retried, since
+   no wait inside a request's lifetime helps.
+2. `Retry-After` (delta-seconds or HTTP-date, the latter measured against the server's `Date`)
+   → honored as-is. OpenDota does not send it, but a proxy in front of it may.
+3. `X-Rate-Limit-Remaining-Minute < 0` → wait until the next minute on the **server's** clock
+   (from `Date`), plus a 1s margin for the counter expiring on a different machine.
+4. anything else → `retry_after=None`, ordinary exponential backoff.
+
+How the waiting works, and why:
+
+- the wait is a **cooldown deadline shared by every request on the client**
+  (`AsyncHTTPTransport._resume_at`). OpenDota counts per key or IP, so a request sent during
+  the cooldown would only be rejected too and burn one of its own attempts.
+- each attempt takes a concurrency slot, then sits out any cooldown, then sends. The slot is
+  held during the cooldown (nobody may send then anyway) but **released during exponential
+  backoff**, so a request merely backing off never starves others. The cap is an
+  `asyncio.Semaphore(max_concurrency)`; the default 10 matches niquests' connection pool
+  (`pool_maxsize=10`), beyond which connections are opened and discarded rather than reused.
+- after a rate limit with a known wait, tenacity's own backoff is **zero**, so the server's
+  timing governs. Because the cooldown is an absolute deadline, a backoff would overlap it
+  rather than add to it — but a backoff longer than the remaining cooldown would hold the
+  retry past the moment the limit cleared.
+- `is_retryable_rate_limit()` in `_retry.py` is the single rule for both the retry predicate
+  and whether a cooldown is started. A 429 that will not be retried — daily quota, wait over
+  `max_retry_after` (default 120s), or 429 removed from `retry_on_status` — starts **no**
+  cooldown, so it fails fast for everyone instead of stalling other requests.
+- every wait the transport takes, cooldown and tenacity backoff alike, goes through one seam
+  (`_clock`, `_sleep`; backoff via `AsyncRetrying.copy(sleep=self._sleep)`). That is what lets
+  the tests assert exact timings with a fake clock. An earlier draft left tenacity on real
+  `asyncio.sleep`, and a test that claimed to check backoff timing silently checked nothing.
+
+Known limit: a rate-limited retry still spends one of `max_retries`, and a request that 429s
+re-queues behind others for a slot. A very large fan-out can therefore exhaust a request's
+attempts across several windows. Proactive throttling from `X-Rate-Limit-Remaining-Minute`
+(pausing before the quota runs out, rather than after a 429) would close that gap; it has
+not been built.
 
 ---
 
@@ -421,7 +472,8 @@ Existing coverage includes:
 
 - config behavior
 - auth behavior
-- retry behavior
+- retry behavior, the concurrency cap, and rate-limit handling (`test_retry.py`, driven
+  through the transport with a fake clock), plus 429 header parsing (`test_transport.py`)
 - transport behavior
 - item assembly, plus a regression sweep over every real item (`test_items_fixture.py`)
 - hero merge/assembly, plus a regression sweep over every real hero (`test_heroes_fixture.py`)
@@ -558,6 +610,11 @@ When editing this project, do not introduce instruction drift in these areas:
 - do not replace `AsyncRetrying` with a synchronous `tenacity.Retrying`, and do not move the
   retry predicate back to `retry_if_result` — both silently disable retries entirely while
   leaving the config knobs and the docs looking correct (§8.1)
+- do not reduce rate-limit handling to "honor `Retry-After`". OpenDota never sends that
+  header; the minute-window wait in `_rate_limit_details()` is what actually fires (§8.2)
+- do not make the rate-limit cooldown per-request, or hold the concurrency slot across
+  exponential backoff. Both pass a naive "it retries" test while, respectively, burning
+  attempts on doomed sends and starving other requests; each is pinned by a test (§8.2)
 - do not describe `_transport.py` as having a sync implementation. `HTTPTransportBase` exists
   to share URL/header/response handling, not to leave room for a sync sibling (§2.1, §3.2)
 - do not move examples ahead of implementation reality

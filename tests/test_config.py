@@ -21,6 +21,8 @@ def test_default_values():
     assert config.extra_headers == {}
     assert config.verify_ssl is True
     assert config.trust_env is True
+    assert config.max_concurrency == 10
+    assert config.max_retry_after == 120.0
 
 
 def test_custom_values():
@@ -116,6 +118,7 @@ def test_merge_other_boolean_fallback():
         ),
         ({"OPENDOTA_TIMEOUT": "30.5"}, "timeout", 30.5),
         ({"OPENDOTA_MAX_RETRIES": "5"}, "max_retries", 5),
+        ({"OPENDOTA_MAX_CONCURRENCY": "4"}, "max_concurrency", 4),
     ],
 )
 def test_config_from_env_reads_values(env_vars, expected_attr, expected_value):
@@ -134,3 +137,13 @@ def test_config_from_env_with_no_env_vars():
         assert config.base_url == "https://api.opendota.com/api"
         assert config.timeout == 10.0
         assert config.max_retries == 3
+        assert config.max_concurrency == 10
+
+
+def test_merge_other_carries_rate_limit_settings():
+    base = OpenDotaClientConfig(max_concurrency=4, max_retry_after=30.0)
+    override = OpenDotaClientConfig(max_concurrency=2, max_retry_after=90.0)
+
+    merged = base.merge_other(override)
+
+    assert (merged.max_concurrency, merged.max_retry_after) == (2, 90.0)

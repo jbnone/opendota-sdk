@@ -14,8 +14,7 @@ from unittest.mock import patch
 
 import niquests
 import pytest
-from tenacity import AsyncRetrying
-from tenacity.wait import wait_exponential
+from tenacity import AsyncRetrying, Future, RetryCallState
 
 from opendota_sdk._config import OpenDotaClientConfig
 from opendota_sdk._errors import (
@@ -44,24 +43,57 @@ class FakeResponse:
         return self._payload
 
 
+class FakeClock:
+    """Monotonic clock that only advances when the transport sleeps on it.
+
+    Installed as the transport's `_clock`/`_sleep` seams, so rate-limit cooldowns
+    can be asserted on exactly without the suite actually waiting.
+    """
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def __call__(self) -> float:
+        return self.now
+
+    async def sleep(self, delay: float) -> None:
+        self.sleeps.append(delay)
+        self.now += delay
+        await asyncio.sleep(0)
+
+
 class RecordingSession:
     """Async session stand-in replaying a scripted sequence of outcomes.
 
     Each entry is either a FakeResponse to return or an exception to raise. The
     last entry repeats once the script runs out, so a one-element script means
     "always this". Every call is counted, and that count is the assertion these
-    tests actually care about.
+    tests actually care about. It also records the fake-clock time of each send and
+    the peak number of requests simultaneously on the wire.
     """
 
-    def __init__(self, outcomes):
+    def __init__(self, outcomes, clock: FakeClock):
         self._outcomes = list(outcomes)
+        self.clock = clock
         self.calls = 0
+        self.sent_at = []
+        self.urls = []
+        self.inflight = 0
+        self.peak_inflight = 0
 
     async def request(self, **kwargs):
         self.calls += 1
-        # Yield control so concurrent requests genuinely interleave.
-        await asyncio.sleep(0)
+        self.urls.append(kwargs.get("url"))
+        self.sent_at.append(self.clock.now)
         outcome = self._outcomes[min(self.calls - 1, len(self._outcomes) - 1)]
+        self.inflight += 1
+        self.peak_inflight = max(self.peak_inflight, self.inflight)
+        try:
+            # Yield control so concurrent requests genuinely interleave.
+            await asyncio.sleep(0)
+        finally:
+            self.inflight -= 1
         if isinstance(outcome, BaseException):
             raise outcome
         return outcome
@@ -70,19 +102,21 @@ class RecordingSession:
         return None
 
 
-def make_transport(outcomes, **policy_kwargs):
-    """Build an AsyncHTTPTransport backed by a RecordingSession.
+def make_transport(outcomes, max_concurrency=10, **policy_kwargs):
+    """Build an AsyncHTTPTransport backed by a RecordingSession and a FakeClock.
 
-    Defaults to no backoff so the suite stays fast; tests that care about wait
-    timing assert on the wait strategy instead of sleeping.
+    Defaults to no backoff, and routes rate-limit cooldowns through the fake clock,
+    so the suite never really sleeps; tests read `session.clock` for timing.
     """
     policy_kwargs.setdefault("backoff_factor", 0.0)
     policy = RetryPolicy(**policy_kwargs)
+    config = OpenDotaClientConfig(max_concurrency=max_concurrency)
     with patch("opendota_sdk.http._transport.niquests.AsyncSession"):
-        transport = AsyncHTTPTransport(
-            OpenDotaClientConfig(), AuthHandler(api_key="key"), policy
-        )
-    session = RecordingSession(outcomes)
+        transport = AsyncHTTPTransport(config, AuthHandler(api_key="key"), policy)
+    clock = FakeClock()
+    transport._clock = clock
+    transport._sleep = clock.sleep
+    session = RecordingSession(outcomes, clock=clock)
     transport._session = cast(Any, session)
     return transport, session
 
@@ -257,14 +291,204 @@ async def test_sequential_requests_each_get_a_full_attempt_budget():
     assert session.calls == 6
 
 
-@pytest.mark.parametrize(
-    "backoff_factor,expected_first_wait", [(0.0, 0.0), (0.5, 1.0), (2.0, 4.0)]
-)
-def test_backoff_factor_scales_the_wait(backoff_factor, expected_first_wait):
-    """backoff_factor drives the wait, and 0 means no wait at all."""
-    policy = RetryPolicy(backoff_factor=backoff_factor)
-    wait = cast(wait_exponential, build_retry_decorator(policy).wait)
+def wait_after(policy, exc, attempt):
+    """The wait tenacity would actually take after `attempt` failed with `exc`."""
+    retrying = build_retry_decorator(policy)
+    state = RetryCallState(retrying, None, (), {})
+    state.attempt_number = attempt
+    state.outcome = Future.construct(attempt, exc, True)
+    return retrying.wait(state)
 
-    assert wait.multiplier == backoff_factor
-    assert wait.min == 0
-    assert wait.multiplier * (2**1) == expected_first_wait
+
+@pytest.mark.parametrize(
+    "backoff_factor,expected_waits",
+    [(0.0, [0.0, 0.0, 0.0]), (0.5, [0.5, 1.0, 2.0]), (2.0, [2.0, 4.0, 8.0])],
+)
+def test_backoff_factor_scales_the_wait(backoff_factor, expected_waits):
+    """backoff_factor drives the wait, and 0 means no wait at all.
+
+    Expected values come from tenacity itself, not hand arithmetic: an earlier
+    version computed them by hand and so never noticed the first wait at the
+    default factor dropped from 1.0s to 0.5s when `min=1` became `min=0`.
+    """
+    policy = RetryPolicy(backoff_factor=backoff_factor)
+    exc = HTTPStatusError(503, "GET", "https://api.opendota.com/api/test")
+
+    waits = [wait_after(policy, exc, attempt) for attempt in (1, 2, 3)]
+
+    assert waits == expected_waits
+
+
+def test_backoff_is_capped_at_sixty_seconds():
+    policy = RetryPolicy(backoff_factor=10.0)
+    exc = HTTPStatusError(503, "GET", "https://api.opendota.com/api/test")
+
+    assert wait_after(policy, exc, 10) == 60
+
+
+# --- Concurrency cap -------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_concurrency_cap_bounds_requests_in_flight():
+    transport, session = make_transport([FakeResponse(200)], max_concurrency=3)
+
+    await asyncio.gather(*(transport.request("GET", "/test") for _ in range(20)))
+
+    assert session.calls == 20
+    assert session.peak_inflight == 3
+
+
+@pytest.mark.asyncio
+async def test_concurrency_cap_of_one_serializes_requests():
+    transport, session = make_transport([FakeResponse(200)], max_concurrency=1)
+
+    await asyncio.gather(*(transport.request("GET", "/test") for _ in range(5)))
+
+    assert session.peak_inflight == 1
+
+
+@pytest.mark.asyncio
+async def test_without_a_tight_cap_requests_do_run_concurrently():
+    """Guards the cap tests above: the harness can observe real overlap."""
+    transport, session = make_transport([FakeResponse(200)], max_concurrency=10)
+
+    await asyncio.gather(*(transport.request("GET", "/test") for _ in range(5)))
+
+    assert session.peak_inflight == 5
+
+
+@pytest.mark.asyncio
+async def test_backoff_does_not_hold_a_concurrency_slot():
+    """A retry that is only backing off must let other requests through.
+
+    With one slot, A fails, and while A sleeps out its backoff B is sent. If the
+    slot were held across the backoff, B would wait for A's retry to finish.
+    """
+    transport, session = make_transport(
+        [FakeResponse(503), FakeResponse(200), FakeResponse(200)],
+        max_concurrency=1,
+        backoff_factor=1.0,
+    )
+
+    await asyncio.gather(transport.request("GET", "/a"), transport.request("GET", "/b"))
+
+    assert [url.rsplit("/", 1)[-1] for url in session.urls] == ["a", "b", "a"]
+
+
+# --- Rate limiting ---------------------------------------------------------------
+
+_MINUTE_LIMITED = {
+    "X-Rate-Limit-Remaining-Minute": "-1",
+    "Date": "Sun, 04 Oct 2026 12:00:45 GMT",
+}
+
+
+@pytest.mark.asyncio
+async def test_minute_limit_waits_for_the_window_to_reset():
+    """OpenDota sends no Retry-After; the wait is the time to the next minute."""
+    transport, session = make_transport(
+        [FakeResponse(429, headers=_MINUTE_LIMITED), FakeResponse(200)],
+        backoff_factor=1.0,
+    )
+
+    await transport.request("GET", "/test")
+
+    assert session.sent_at == [0.0, 16.0]
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_retry_follows_server_timing_not_backoff():
+    """The retry goes out when the limit clears, even if backoff would wait longer.
+
+    Backoff here would be 60s; the window clears in 16s. The cooldown is an absolute
+    deadline, so a shorter backoff would merely overlap it -- only a longer one shows
+    the difference, which is why the factor is deliberately huge.
+    """
+    transport, session = make_transport(
+        [FakeResponse(429, headers=_MINUTE_LIMITED), FakeResponse(200)],
+        backoff_factor=100.0,
+    )
+
+    await transport.request("GET", "/test")
+
+    assert session.sent_at == [0.0, 16.0]
+    assert session.clock.sleeps == [0.0, 16.0]
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_cooldown_holds_every_request_on_the_client():
+    """One 429 pauses the whole client, not just the request that received it.
+
+    OpenDota counts per key or IP, so a request sent during the cooldown would only
+    be rejected too, and would burn one of its own attempts doing it.
+    """
+    transport, session = make_transport(
+        [FakeResponse(429, headers=_MINUTE_LIMITED), FakeResponse(200)],
+        max_concurrency=1,
+    )
+
+    results = await asyncio.gather(
+        transport.request("GET", "/a"), transport.request("GET", "/b")
+    )
+
+    assert session.sent_at == [0.0, 16.0, 16.0]
+    assert all(result.status_code == 200 for result in results)
+
+
+@pytest.mark.asyncio
+async def test_daily_limit_is_raised_without_retry_or_cooldown():
+    transport, session = make_transport(
+        [FakeResponse(429, headers={"X-Rate-Limit-Remaining-Day": "-1"})],
+        max_retries=3,
+    )
+
+    with pytest.raises(RateLimitError) as exc_info:
+        await transport.request("GET", "/test")
+
+    assert session.calls == 1
+    assert exc_info.value.is_daily_limit is True
+    assert transport._resume_at == 0.0
+
+
+@pytest.mark.asyncio
+async def test_retry_after_beyond_the_cap_is_raised_without_retry_or_cooldown():
+    """A server asking for an hour should not silently stall a batch for an hour."""
+    transport, session = make_transport(
+        [FakeResponse(429, headers={"Retry-After": "3600"})],
+        max_retries=3,
+        max_retry_after=120.0,
+    )
+
+    with pytest.raises(RateLimitError) as exc_info:
+        await transport.request("GET", "/test")
+
+    assert session.calls == 1
+    assert exc_info.value.retry_after == 3600
+    assert transport._resume_at == 0.0
+
+
+@pytest.mark.asyncio
+async def test_no_cooldown_when_429s_are_not_retried():
+    """A policy that fails fast on 429 must not make other requests wait either."""
+    transport, _ = make_transport(
+        [FakeResponse(429, headers=_MINUTE_LIMITED)], retry_on_status=[500]
+    )
+
+    with pytest.raises(RateLimitError):
+        await transport.request("GET", "/test")
+
+    assert transport._resume_at == 0.0
+
+
+@pytest.mark.asyncio
+async def test_429_of_unknown_origin_falls_back_to_exponential_backoff():
+    """With no Retry-After and no OpenDota headers, there is no window to wait for."""
+    transport, session = make_transport([FakeResponse(429)], max_retries=3)
+
+    with pytest.raises(RateLimitError) as exc_info:
+        await transport.request("GET", "/test")
+
+    assert session.calls == 3
+    assert exc_info.value.retry_after is None
+    assert transport._resume_at == 0.0
