@@ -3,9 +3,18 @@ name: ci
 on:
   push:
     branches: [ main ]
-    tags: [ 'v*' ]
+    # Every tag, not just v*: a mistyped release tag must fail loudly in "Stamp version"
+    # instead of silently triggering nothing.
+    tags: [ '*' ]
   pull_request:
     branches: [ main ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
@@ -13,12 +22,16 @@ jobs:
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
 
     - name: Install uv
       uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+      with:
+        enable-cache: false  # a poisoned cache must not reach published artifacts
 
     - name: Install dependencies
-      run: uv sync --all-groups
+      run: uv sync --locked --all-groups
 
     - name: Lint
       run: uv run ruff check
@@ -29,6 +42,9 @@ jobs:
     - name: Type check
       run: uv run ty check
 
+    - name: Lint workflows
+      run: uv run zizmor .github/workflows
+
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -37,17 +53,19 @@ jobs:
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-    
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
       with:
-        python-version: ${{ matrix.python-version }}
+        persist-credentials: false
 
-    - name: Install uv
+    - name: Install uv and Python ${{ matrix.python-version }}
       uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+      with:
+        # Sets UV_PYTHON, which takes precedence over .python-version. A Python
+        # installed by actions/setup-python does not, so uv would test 3.14 every time.
+        python-version: ${{ matrix.python-version }}
+        enable-cache: false
 
     - name: Install dependencies
-      run: uv sync --all-groups
+      run: uv sync --locked --all-groups
 
     - name: Run tests
       run: uv run pytest --cov=opendota_sdk
@@ -58,58 +76,46 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0  # git describe needs the tags
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          enable-cache: false  # a poisoned cache must not reach published artifacts
 
-      - name: Build PyPI artifact
+      # The tag is the version; pyproject.toml only holds a 0.0.0 placeholder.
+      # Pushes to main get a unique dev version above the last release, so every
+      # merge exercises the TestPyPI publishing path end to end.
+      - name: Stamp version
+        if: github.event_name == 'push'
         run: |
-          rm -rf dist dist-pypi dist-testpypi
-          uv build
-          mkdir -p dist-pypi
-          cp dist/* dist-pypi/
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            if [[ "$GITHUB_REF_NAME" != v* ]]; then
+              echo "::error::Release tags must start with 'v' (got '$GITHUB_REF_NAME')"
+              exit 1
+            fi
+            uv version --frozen "${GITHUB_REF_NAME#v}"
+          else
+            last=$(git describe --tags --match 'v*' --abbrev=0 2>/dev/null || echo v0.0.0)
+            uv version --frozen "${last#v}.post0.dev${GITHUB_RUN_NUMBER}"
+          fi
 
-      - name: Set alpha version for TestPyPI
-        run: |
-          python - <<'PY'
-          import os
-          import re
-          from pathlib import Path
+      - name: Build
+        run: uv build --no-sources
 
-          run_id = os.environ['GITHUB_RUN_ID']
-          version = f'0.1.0-alpha.{run_id}'
+      - name: Smoke test the wheel
+        run: uv run --isolated --no-project --with dist/*.whl python -c "import opendota_sdk; print(opendota_sdk.__version__)"
 
-          def replace(path, pattern, repl):
-              text = path.read_text()
-              path.write_text(re.sub(pattern, repl, text, count=1, flags=re.MULTILINE))
-
-          replace(Path('pyproject.toml'), r'^(version\s*=\s*")(.*)(".*)$', lambda m: f"{m.group(1)}{version}{m.group(3)}")
-          print('Set project version to', version)
-          PY
-
-      - name: Build TestPyPI artifact
-        run: |
-          rm -rf dist
-          uv build
-          mkdir -p dist-testpypi
-          cp dist/* dist-testpypi/
-
-      - name: Restore original version file
-        run: git restore pyproject.toml
-
-      - name: Upload PyPI artifacts
+      - name: Upload distributions
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: python-package-distributions-pypi
-          path: dist-pypi/
-
-      - name: Upload TestPyPI artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: python-package-distributions-testpypi
-          path: dist-testpypi/
+          name: python-package-distributions
+          path: dist/
 
   testpypi-publish:
+    if: github.event_name == 'push'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -120,20 +126,22 @@ jobs:
       url: https://test.pypi.org/p/opendota-sdk
 
     steps:
-      - name: Download TestPyPI artifacts
+      - name: Download distributions
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: python-package-distributions-testpypi
+          name: python-package-distributions
           path: dist/
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
         with:
           repository-url: https://test.pypi.org/legacy/
+          # A re-run keeps its run number, so its dev version is already uploaded.
+          skip-existing: true
 
   pypi-publish:
-    if: startsWith(github.ref, 'refs/tags/')  # only publish to PyPI on tag pushes
-    needs: build
+    if: github.ref_type == 'tag'
+    needs: testpypi-publish
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -141,13 +149,49 @@ jobs:
     environment:
       name: pypi
       url: https://pypi.org/p/opendota-sdk
-    
+
     steps:
-      - name: Download PyPI artifacts
+      - name: Download distributions
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: python-package-distributions-pypi
+          name: python-package-distributions
           path: dist/
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
+
+  github-release:
+    if: github.ref_type == 'tag'
+    needs: pypi-publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0  # git-cliff needs the history since the previous tag
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          enable-cache: false  # a poisoned cache must not reach published artifacts
+
+      - name: Download distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          uv run --locked --only-group release git-cliff --latest --strip all > notes.md
+          flags=()
+          if [[ "$GITHUB_REF_NAME" =~ (a|b|rc|alpha|beta)\.?[0-9]+$ ]]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag \
+            --title "$GITHUB_REF_NAME" --notes-file notes.md "${flags[@]}"

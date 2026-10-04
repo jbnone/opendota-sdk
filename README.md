@@ -13,4 +13,8 @@
 
 Build better Dota 2 tools with the OpenDota SDK, providing enhanced access to [OpenDota API](https://docs.opendota.com/) data.
 
+```bash
+pip install opendota-sdk
+```
+
 Docs: **https://jbnone.github.io/opendota-sdk/**

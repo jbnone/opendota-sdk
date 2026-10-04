@@ -504,6 +504,7 @@ Use the existing toolchain:
 uv run pytest
 uv run ruff check
 uv run ty check
+uv run zizmor .github/workflows   # only when touching workflows (§14)
 ```
 
 For narrower work, run the smallest relevant subset first.
@@ -622,6 +623,14 @@ When editing this project, do not introduce instruction drift in these areas:
   back to the `docs` dependency group without a concrete need — the docs site runs on
   Zensical deliberately (§13); the latest releases of the last two pull in a package
   ("properdocs") this repo does not want as a dependency
+- do not bump `version` in `pyproject.toml` by hand or replace the `0.0.0` placeholder —
+  the release tag is the version and CI stamps it (§14). Hand bumps are how tags and
+  versions drifted apart before, leaving four of seven alpha tags unpublished
+- do not publish to TestPyPI from pull requests, and do not go back to run-id versions
+  like `0.1.0-alpha.{run_id}` — the former breaks fork PRs and floods TestPyPI, the latter
+  produced versions that outrank every real release (§14)
+- do not re-enable the `setup-uv` cache in the workflows; zizmor's cache-poisoning audit
+  rejects it because these workflows publish what they build
 
 If the implementation changes materially, update this file in the same work.
 
@@ -636,9 +645,9 @@ If the implementation changes materially, update this file in the same work.
 5. Add the remaining hero-scoped endpoints (`/heroes/{id}/matchups`, `/durations`, `/players`,
    `/itemPopularity`) one at a time, hand-rolled per §7, and let the per-key caching need that emerges
    there decide whether a shared abstraction is warranted.
-6. `README.md` still documents none of this — badges, a one-line description, and a link
-   out to the docs site. It is also the PyPI landing page (`readme = "README.md"`), so an
-   install line and the `async with` quickstart are the minimum worth adding.
+6. `README.md` has badges, a one-line description, the install line, and a link out to
+   the docs site. It is also the PyPI landing page (`readme = "README.md"`), so the
+   `async with` quickstart is the next thing worth adding.
 7. Docs site: scaffolded, see §13. Keep the Google-style docstrings on the public API
    (§10.4) accurate — they're the site's actual content, not just source-level docs.
 
@@ -674,15 +683,60 @@ Current shape:
   only by changes under `docs/`, `src/`, `mkdocs.yml`, or the dependency files. Its
   `docs` job runs `gen_ref_pages.py` then `zensical build -f mkdocs.yml --strict`,
   which fails the build on broken cross-refs or missing pages — same purpose as the
-  item/hero regression fixtures serve for code. On push to `main`, a separate
+  item/hero regression fixtures serve for code. On a release tag push (`v*`), a separate
   `docs-deploy` job publishes to GitHub Pages via the native Actions flow
-  (`actions/upload-pages-artifact` + `actions/deploy-pages`), which requires the
-  repository's Pages source to be set to "GitHub Actions" once in repo
-  settings — not something CI or an agent can set on its own.
+  (`actions/upload-pages-artifact` + `actions/deploy-pages`), so the site documents what
+  is on PyPI, not unreleased `main`. That requires the repository's Pages source set to
+  "GitHub Actions" and a `v*` tag rule on the `github-pages` environment — repo
+  settings, not something CI or an agent can set on its own.
 
 ---
 
-## 14. References
+## 14. Release Process
+
+Releasing is one step: push a `v` tag.
+
+```bash
+git tag v0.1.0-alpha.8 && git push origin v0.1.0-alpha.8
+```
+
+There is no version bump commit. `pyproject.toml` holds `version = "0.0.0"` as a
+placeholder because `uv_build` requires a static version and cannot read one from git
+(upstream: astral-sh/uv#14037). `ci.yml`'s build job stamps the real version with
+`uv version --frozen` right before `uv build`, so the tag cannot disagree with the built
+version. One consequence: `opendota_sdk.__version__` reports `0.0.0` in a dev checkout;
+wheels report the real version.
+
+What `ci.yml` does per trigger:
+
+| Trigger | Version stamped | TestPyPI | PyPI | GitHub Release |
+|---|---|---|---|---|
+| pull request | none (`0.0.0`) | — | — | — |
+| push to `main` | `<last v tag>.post0.dev<run number>` | yes | — | — |
+| tag `v*` | the tag, normalised (`v0.1.0-alpha.8` → `0.1.0a8`) | yes | after TestPyPI | after PyPI |
+
+- one build per run; the same files go to TestPyPI, PyPI, and the GitHub Release, after
+  an import smoke test of the wheel in a clean environment
+- TestPyPI on every push to `main` is a deliberate health check of the publishing path
+  (OIDC trust, the publish action, metadata acceptance). Renovate automerges action
+  updates, so a broken publish shows up the same day rather than on release day.
+  `skip-existing` covers re-runs, which keep their run number
+- the workflow triggers on **every** tag and fails tags without the `v` prefix, rather
+  than ignoring them; `uv version` rejects tags that are not valid versions
+- release notes come from git-cliff (`release` dependency group, configured under
+  `[tool.git-cliff]` in `pyproject.toml`) over the Conventional Commits since the previous
+  `v` tag: breaking changes, features, fixes, performance, and runtime (`deps(main)`)
+  dependency bumps. Other commit types are omitted, so a commit that should appear in the
+  notes needs a matching prefix. There is no `CHANGELOG.md`; the Releases page is the changelog
+- PyPI and TestPyPI use Trusted Publishing, bound to `ci.yml` and the `pypi`/`testpypi`
+  environments. Renaming the workflow or those environments breaks publishing until the
+  trusted publisher on (Test)PyPI is updated to match
+- workflows run with `contents: read` by default, write scopes only per job, no persisted
+  checkout credentials, and no `setup-uv` cache; `zizmor` audits them in CI and in prek
+
+---
+
+## 15. References
 
 - [OpenDota API Docs](https://docs.opendota.com/)
 - [dotaconstants Repository](https://github.com/odota/dotaconstants)

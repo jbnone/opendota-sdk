@@ -1,6 +1,8 @@
 [project]
 name = "opendota-sdk"
-version = "0.1.0-alpha.7"
+# Placeholder: the release tag is the version. CI stamps it with `uv version` right
+# before building (see .github/workflows/ci.yml), so never bump this by hand.
+version = "0.0.0"
 description = "SDK for the OpenDota API, providing enhanced capabilities for Dota 2 data."
 readme = "README.md"
 license = "MIT"
@@ -43,6 +45,11 @@ dev = [
     "pytest-cov==7.1.0",
     "ruff==0.16.8",
     "ty==0.0.80",
+    "zizmor==1.30.1",
+]
+release = [
+    # Writes the GitHub Release notes from Conventional Commits; config below.
+    "git-cliff==2.14.2",
 ]
 docs = [
     # Zensical, not mkdocs + mkdocs-material: MkDocs 1.x is effectively unmaintained
@@ -77,3 +84,30 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D"]
+
+# Release notes only; there is no CHANGELOG.md, the GitHub Releases page is the changelog.
+[tool.git-cliff.changelog]
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim }}
+{% for commit in commits %}
+- {{ commit.message | upper_first }} ({{ commit.id | truncate(length=7, end="") }})
+{%- endfor %}
+{% endfor %}
+"""
+trim = true
+
+[tool.git-cliff.git]
+conventional_commits = true
+filter_unconventional = true
+# Ignores stray tags without the `v` prefix (e.g. 0.1.0-alpha.6, never published).
+tag_pattern = "^v[0-9]"
+# The `<!-- n -->` prefixes only order the groups; the template strips them.
+commit_parsers = [
+    { field = "breaking", pattern = "true", group = "<!-- 0 -->Breaking Changes" },
+    { message = "^feat", group = "<!-- 1 -->Features" },
+    { message = "^fix", group = "<!-- 2 -->Bug Fixes" },
+    { message = "^perf", group = "<!-- 3 -->Performance" },
+    { message = "^deps\\(main\\)", group = "<!-- 4 -->Dependencies" },
+    { message = ".*", skip = true },
+]
