@@ -41,7 +41,7 @@ dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.1.0",
-    "ruff==0.16.7",
+    "ruff==0.16.8",
     "ty==0.0.80",
 ]
 docs = [
@@ -58,7 +58,7 @@ docs = [
     # as a plain pre-build step instead). Deliberately minimal: both of those two
     # packages' latest releases pull in a dependency ("properdocs") that isn't wanted
     # here, so the clean fix is not depending on either package at all.
-    "mkdocstrings-python==2.0.8",
+    "mkdocstrings-python==2.0.9",
 ]
 
 [tool.coverage.run]
