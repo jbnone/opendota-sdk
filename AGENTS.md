@@ -373,6 +373,9 @@ Current error types include:
 - `OpenDotaError`
 - `TransportError`
 - `HTTPStatusError`
+- `InvalidAPIKeyError` — subclass of `HTTPStatusError`. OpenDota rejects a bad key only as a
+  400 whose JSON `error` names the API key, so `_rejected_key_reason()` matches on that body,
+  and only when the request carried a key; any other 400 stays a plain `HTTPStatusError`
 - `RateLimitError`
 - `ResponseDecodeError`
 

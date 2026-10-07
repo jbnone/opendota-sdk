@@ -18,6 +18,7 @@ from tenacity import RetryCallState
 from opendota_sdk._config import OpenDotaClientConfig
 from opendota_sdk._errors import (
     HTTPStatusError,
+    InvalidAPIKeyError,
     RateLimitError,
     ResponseDecodeError,
     TransportError,
@@ -47,6 +48,25 @@ def _log_target(path: str, params: dict[str, Any] | None) -> str:
         for key, value in params.items()
     )
     return f"{path}?{shown}"
+
+
+def _rejected_key_reason(response: niquests.Response) -> str | None:
+    """Return OpenDota's reason if this response rejects the API key, else `None`.
+
+    OpenDota signals a bad key only as HTTP 400 with a JSON `error` naming the API key
+    ("Invalid API key format", or "API key invalid. ..." for unknown or cancelled keys),
+    so that body is the only reliable marker. Any other 400 is left as `HTTPStatusError`.
+    """
+    if response.status_code != 400:
+        return None
+    try:
+        body = json.loads(response.text or "")
+    except (TypeError, ValueError):
+        return None
+    error = body.get("error") if isinstance(body, dict) else None
+    if isinstance(error, str) and "api key" in error.lower():
+        return error
+    return None
 
 
 def _describe_failure(exc: BaseException | None) -> str:
@@ -234,6 +254,20 @@ class HTTPTransportBase:
             )
 
         if not response.ok:
+            # Only a request that carried a key can have it rejected; the check keeps an
+            # unrelated 400 that happens to mention an API key from being misreported.
+            reason = (
+                _rejected_key_reason(response) if self.auth_handler.has_auth() else None
+            )
+            if reason is not None:
+                raise InvalidAPIKeyError(
+                    reason=reason,
+                    status_code=response.status_code,
+                    method=method,
+                    url=response.url,
+                    response_text=response.text,
+                    headers=dict(response.headers),
+                )
             raise HTTPStatusError(
                 status_code=response.status_code,
                 method=method,

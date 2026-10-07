@@ -5,6 +5,7 @@ from importlib.metadata import version
 from opendota_sdk._config import OpenDotaClientConfig, config_from_env, default_config
 from opendota_sdk._errors import (
     HTTPStatusError,
+    InvalidAPIKeyError,
     OpenDotaError,
     RateLimitError,
     ResponseDecodeError,
@@ -51,6 +52,7 @@ __all__ = [
     "HeroSkillBracket",
     "HeroStats",
     "HeroTalent",
+    "InvalidAPIKeyError",
     "Item",
     "ItemAbility",
     "ItemAbilityType",

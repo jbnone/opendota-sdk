@@ -71,6 +71,47 @@ class HTTPStatusError(OpenDotaError):
         super().__init__(message)
 
 
+class InvalidAPIKeyError(HTTPStatusError):
+    """Raised when OpenDota rejects the configured API key.
+
+    OpenDota answers HTTP 400 both for a key that is not well formed and for one it does
+    not recognize (unknown or cancelled). Either way no request can succeed until the key
+    is fixed or removed, so this is never retried. It subclasses `HTTPStatusError`, so code
+    that already catches that still catches this.
+
+    Attributes:
+        reason: OpenDota's own explanation, e.g. `"Invalid API key format"`.
+    """
+
+    def __init__(
+        self,
+        reason: str,
+        status_code: int | None,
+        method: str,
+        url: str | None,
+        response_text: str | None = None,
+        headers: dict[str, Any] | None = None,
+    ) -> None:
+        """Initialize InvalidAPIKeyError.
+
+        Args:
+            reason: OpenDota's explanation of why the key was rejected.
+            status_code: The HTTP status code returned by the server.
+            method: The HTTP method used in the request.
+            url: The URL that was requested.
+            response_text: The response body as text (optional).
+            headers: The response headers (optional).
+        """
+        super().__init__(status_code, method, url, response_text, headers)
+        self.reason = reason
+        message = (
+            f"OpenDota rejected the API key ({reason.rstrip('. ')}). Check the "
+            "`api_key` argument or the OPENDOTA_API_KEY environment variable, or "
+            "remove the key to send requests anonymously."
+        )
+        self.args = (message,)
+
+
 class RateLimitError(OpenDotaError):
     """Raised when the API rate limit is exceeded (HTTP 429).
 

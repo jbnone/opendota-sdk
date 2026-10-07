@@ -22,7 +22,8 @@ for failures, not absent data.
 | Type | Raised when |
 |---|---|
 | [`TransportError`][opendota_sdk.TransportError] | A connection-level failure (DNS, timeout, refused connection). Carries `is_timeout`, `True` when the request timed out rather than failing another way. |
-| [`HTTPStatusError`][opendota_sdk.HTTPStatusError] | The API responds with a non-2xx status. Carries `status_code`, `method`, `url`, `response_text`, and `headers`. A 400 on every request usually means a malformed or unknown API key — see [Configuration → API key](configuration.md#api-key). |
+| [`HTTPStatusError`][opendota_sdk.HTTPStatusError] | The API responds with a non-2xx status. Carries `status_code`, `method`, `url`, `response_text`, and `headers`. |
+| [`InvalidAPIKeyError`][opendota_sdk.InvalidAPIKeyError] | OpenDota rejects your API key as malformed, unknown, or cancelled. A subclass of `HTTPStatusError` (status 400), so existing handlers still catch it; `reason` holds OpenDota's explanation. Never retried — see [Configuration → API key](configuration.md#api-key). |
 | [`RateLimitError`][opendota_sdk.RateLimitError] | The API responds 429 and the client could not, or should not, wait it out. Carries `retry_after` (seconds, or `None` if unknown) and `is_daily_limit`. |
 | [`ResponseDecodeError`][opendota_sdk.ResponseDecodeError] | The response body isn't valid JSON. |
 
@@ -30,10 +31,12 @@ for failures, not absent data.
 and can be caught separately when you need to branch on them:
 
 ```python
-from opendota_sdk import HTTPStatusError, RateLimitError
+from opendota_sdk import HTTPStatusError, InvalidAPIKeyError, RateLimitError
 
 try:
     items = await client.get_items()
+except InvalidAPIKeyError as exc:
+    logger.error("Fix the OpenDota API key: %s", exc.reason)
 except RateLimitError as exc:
     if exc.is_daily_limit:
         ...  # waiting won't help today

@@ -24,9 +24,9 @@ minute and no daily cap (usage beyond the free allowance is billed). The key is 
 `Authorization: Bearer <key>`, and surrounding whitespace — such as a trailing newline
 from a secrets file — is stripped first.
 
-OpenDota checks the key on every request. A malformed or unknown key fails immediately
-with an [`HTTPStatusError`][opendota_sdk.HTTPStatusError] (status 400) whose
-`response_text` says which; it is not retried, and the request is not silently sent
+OpenDota checks the key on every request. A malformed, unknown, or cancelled key fails
+immediately with [`InvalidAPIKeyError`][opendota_sdk.InvalidAPIKeyError], whose `reason`
+carries OpenDota's explanation. It is not retried, and the request is not silently sent
 anonymously instead.
 
 !!! note "Upgrading from 0.1.0a8 or earlier"

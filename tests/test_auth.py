@@ -11,9 +11,14 @@ from unittest.mock import patch
 
 import pytest
 
-from opendota_sdk import OpenDotaAsyncClient
+from opendota_sdk import HTTPStatusError, InvalidAPIKeyError, OpenDotaAsyncClient
 from opendota_sdk.http._auth import AuthHandler
-from tests._transport_harness import FakeClock, FakeResponse, RecordingSession
+from tests._transport_harness import (
+    FakeClock,
+    FakeResponse,
+    RecordingSession,
+    make_transport,
+)
 
 KEY = "0f1e2d3c-4b5a-4978-8a69-5b4c3d2e1f00"
 
@@ -121,3 +126,102 @@ async def test_anonymous_client_sends_no_authorization_header():
         await client._get("/heroStats")
 
     assert "Authorization" not in session.sent_headers[0]
+
+
+# --- Rejected keys ---------------------------------------------------------------
+
+_MALFORMED = '{"error":"Invalid API key format"}'
+_UNKNOWN = (
+    '{"error":"API key invalid. Please check the API dashboard or email '
+    'support@opendota.com."}'
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body,reason",
+    [
+        (_MALFORMED, "Invalid API key format"),
+        (
+            _UNKNOWN,
+            (
+                "API key invalid. Please check the API dashboard or email "
+                "support@opendota.com."
+            ),
+        ),
+    ],
+)
+async def test_rejected_key_raises_invalid_api_key_error(body, reason):
+    transport, session = make_transport([_text_response(400, body)], api_key=KEY)
+
+    with pytest.raises(InvalidAPIKeyError) as exc_info:
+        await transport.request("GET", "/heroStats")
+
+    assert exc_info.value.reason == reason
+    assert exc_info.value.status_code == 400
+    assert session.calls == 1, "a rejected key can never succeed, so it is not retried"
+
+
+@pytest.mark.asyncio
+async def test_invalid_api_key_error_is_still_an_http_status_error():
+    """Existing `except HTTPStatusError` handlers keep catching it."""
+    transport, _ = make_transport([_text_response(400, _MALFORMED)], api_key=KEY)
+
+    with pytest.raises(HTTPStatusError):
+        await transport.request("GET", "/heroStats")
+
+
+def test_invalid_api_key_error_message_is_actionable_and_keyless():
+    exc = InvalidAPIKeyError(
+        reason="Invalid API key format",
+        status_code=400,
+        method="GET",
+        url="https://api.opendota.com/api/heroStats",
+    )
+
+    assert str(exc) == (
+        "OpenDota rejected the API key (Invalid API key format). Check the `api_key` "
+        "argument or the OPENDOTA_API_KEY environment variable, or remove the key to "
+        "send requests anonymously."
+    )
+    assert KEY not in str(exc)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"error":"invalid match_id"}',  # another 400 OpenDota can send
+        "Bad Request",  # not JSON
+        '["API key"]',  # JSON, but not the {"error": ...} shape
+        '{"error": 42}',
+    ],
+)
+async def test_other_400s_stay_plain_http_status_errors(body):
+    transport, _ = make_transport([_text_response(400, body)], api_key=KEY)
+
+    with pytest.raises(HTTPStatusError) as exc_info:
+        await transport.request("GET", "/x")
+
+    assert type(exc_info.value) is HTTPStatusError
+
+
+@pytest.mark.asyncio
+async def test_key_error_body_without_a_key_sent_is_not_misreported():
+    """Only a request that carried a key can have had it rejected."""
+    with patch.dict(os.environ, {}, clear=True):
+        transport, session = make_transport(
+            [_text_response(400, _MALFORMED)], api_key=None
+        )
+
+    with pytest.raises(HTTPStatusError) as exc_info:
+        await transport.request("GET", "/x")
+
+    assert type(exc_info.value) is HTTPStatusError
+    assert "Authorization" not in session.sent_headers[0]
+
+
+def _text_response(status_code, text):
+    response = FakeResponse(status_code)
+    response.text = text
+    return response
