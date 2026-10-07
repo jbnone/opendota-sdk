@@ -61,7 +61,8 @@ def test_build_headers_defaults_and_config():
 
     assert headers["Accept"] == "application/json"
     assert headers["X-Custom"] == "value"
-    assert headers["X-API-Key"] == "test_key"
+    assert headers["Authorization"] == "Bearer test_key"
+    assert "X-API-Key" not in headers
 
 
 def test_build_headers_with_request_headers():
@@ -76,7 +77,8 @@ def test_build_headers_with_request_headers():
     assert headers["Accept"] == "application/json"
     assert headers["X-Custom"] == "value"
     assert headers["X-Request"] == "header"
-    assert headers["X-API-Key"] == "test_key"
+    assert headers["Authorization"] == "Bearer test_key"
+    assert "X-API-Key" not in headers
 
 
 def test_build_headers_request_overrides_config():

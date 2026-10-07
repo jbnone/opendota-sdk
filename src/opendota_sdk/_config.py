@@ -10,7 +10,8 @@ class OpenDotaClientConfig:
 
     Attributes:
         api_key: Optional API key for authentication. If not provided, the client
-            falls back to the `OPENDOTA_API_KEY` environment variable.
+            falls back to the `OPENDOTA_API_KEY` environment variable. Left out of
+            `repr()`, so printing or logging a config never exposes it.
         base_url: Base URL for the OpenDota API.
         timeout: Request timeout in seconds.
         max_retries: Maximum number of retries for failed requests.
@@ -29,7 +30,7 @@ class OpenDotaClientConfig:
             stalls for hours.
     """
 
-    api_key: str | None = None
+    api_key: str | None = field(default=None, repr=False)
     base_url: str = "https://api.opendota.com/api"
     timeout: float = 10.0
     max_retries: int = 3

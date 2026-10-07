@@ -147,3 +147,24 @@ def test_merge_other_carries_rate_limit_settings():
     merged = base.merge_other(override)
 
     assert (merged.max_concurrency, merged.max_retry_after) == (2, 90.0)
+
+
+def test_repr_never_exposes_the_api_key():
+    """Printing, logging, or a traceback showing a config must not leak the key."""
+    secret = "0f1e2d3c-4b5a-4978-8a69-5b4c3d2e1f00"
+    config = OpenDotaClientConfig(api_key=secret)
+
+    assert secret not in repr(config)
+    assert secret not in str(config)
+    assert "api_key" not in repr(config)
+    assert repr(config).startswith("OpenDotaClientConfig(base_url=")
+
+
+def test_hidden_api_key_is_still_set_and_compared():
+    """Hiding it from repr changes nothing else: access, equality, and merging still see it."""
+    secret = "0f1e2d3c-4b5a-4978-8a69-5b4c3d2e1f00"
+    config = OpenDotaClientConfig(api_key=secret)
+
+    assert config.api_key == secret
+    assert config != OpenDotaClientConfig(api_key="other")
+    assert OpenDotaClientConfig().merge_other(config).api_key == secret

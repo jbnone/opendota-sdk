@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import math
 import time
 from collections.abc import Awaitable, Callable, Mapping
@@ -12,6 +13,7 @@ from typing import Any, Self
 from urllib.parse import urljoin
 
 import niquests
+from tenacity import RetryCallState
 
 from opendota_sdk._config import OpenDotaClientConfig
 from opendota_sdk._errors import (
@@ -25,6 +27,38 @@ from ._auth import AuthHandler
 from ._retry import RetryPolicy, build_retry_decorator, is_retryable_rate_limit
 
 _DEFAULT_HEADERS = {"Accept": "application/json"}
+
+logger = logging.getLogger(__name__)
+
+# Query parameters whose values must never reach a log line. OpenDota accepts the API
+# key as `?api_key=`, so a request built that way would otherwise leak it.
+_REDACTED_PARAMS = frozenset({"api_key"})
+
+
+def _log_target(path: str, params: dict[str, Any] | None) -> str:
+    """Render a request for log lines: the API-relative path and redacted params.
+
+    Deliberately not the full URL and never headers, which is where the API key lives.
+    """
+    if not params:
+        return path
+    shown = "&".join(
+        f"{key}={'***' if key.lower() in _REDACTED_PARAMS else value}"
+        for key, value in params.items()
+    )
+    return f"{path}?{shown}"
+
+
+def _describe_failure(exc: BaseException | None) -> str:
+    """Summarize a failed attempt for a log line without echoing response bodies."""
+    if isinstance(exc, RateLimitError):
+        return "daily rate limit" if exc.is_daily_limit else "rate limit (HTTP 429)"
+    if isinstance(exc, HTTPStatusError):
+        return f"HTTP {exc.status_code}"
+    if isinstance(exc, TransportError):
+        return "timeout" if exc.is_timeout else "connection error"
+    return type(exc).__name__ if exc is not None else "unknown failure"
+
 
 # OpenDota's per-minute counter is a fixed window that resets at every wall-clock
 # minute boundary on the server (svc/web.ts expires it at the start of the next
@@ -259,25 +293,41 @@ class AsyncHTTPTransport(HTTPTransportBase):
         self._clock: Callable[[], float] = time.monotonic
         self._sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
 
-    async def _wait_for_cooldown(self) -> None:
+    async def _wait_for_cooldown(self, method: str, target: str) -> None:
         """Sleep until any rate-limit cooldown has passed.
 
         Loops because another request may extend the cooldown while this one sleeps.
         """
         while (remaining := self._resume_at - self._clock()) > 0:
+            logger.debug(
+                "%s %s: waiting %.1fs for the rate-limit cooldown",
+                method,
+                target,
+                remaining,
+            )
             await self._sleep(remaining)
 
-    def _start_cooldown(self, exc: RateLimitError) -> None:
+    def _start_cooldown(self, exc: RateLimitError, method: str, target: str) -> None:
         """Hold every request on this client until the rate limit clears.
 
         Only for 429s that will actually be retried: a daily cap, an over-long wait, or
         a policy that does not retry 429s fails fast instead of stalling other requests.
+        Logged only when the deadline actually moves, so a burst of concurrent 429s
+        reports one pause rather than one line per rejected request.
         """
         if exc.retry_after is None or not is_retryable_rate_limit(
             self.retry_policy, exc
         ):
             return
-        self._resume_at = max(self._resume_at, self._clock() + exc.retry_after)
+        resume_at = self._clock() + exc.retry_after
+        if resume_at > self._resume_at:
+            logger.info(
+                "Rate limited on %s %s; holding all requests on this client for %ds",
+                method,
+                target,
+                exc.retry_after,
+            )
+            self._resume_at = resume_at
 
     async def request(
         self,
@@ -308,10 +358,41 @@ class AsyncHTTPTransport(HTTPTransportBase):
             TransportError: For connection/timeout errors.
             RateLimitError: For rate limit errors.
         """
+        target = _log_target(path, params)
+        attempt = 0
+
+        def _log_retry(retry_state: RetryCallState) -> None:
+            outcome = retry_state.outcome
+            exc = (
+                outcome.exception() if outcome is not None and outcome.failed else None
+            )
+            if isinstance(exc, RateLimitError) and exc.retry_after is not None:
+                logger.info(
+                    "Retrying %s %s after %s (attempt %d of %d) once the limit clears",
+                    method,
+                    target,
+                    _describe_failure(exc),
+                    retry_state.attempt_number,
+                    self.retry_policy.max_retries,
+                )
+                return
+            next_action = retry_state.next_action
+            logger.info(
+                "Retrying %s %s after %s (attempt %d of %d) in %.2fs",
+                method,
+                target,
+                _describe_failure(exc),
+                retry_state.attempt_number,
+                self.retry_policy.max_retries,
+                next_action.sleep if next_action is not None else 0.0,
+            )
 
         async def _do_request() -> niquests.Response:
+            nonlocal attempt
+            attempt += 1
             async with self._slots:
-                await self._wait_for_cooldown()
+                await self._wait_for_cooldown(method, target)
+                started = self._clock()
                 try:
                     response = await self._session.request(
                         method=method,
@@ -323,8 +404,23 @@ class AsyncHTTPTransport(HTTPTransportBase):
                         timeout=timeout or self.config.timeout,
                         verify=self.config.verify_ssl,
                     )
+                    logger.debug(
+                        "%s %s -> %d in %.2fs (attempt %d)",
+                        method,
+                        target,
+                        response.status_code,
+                        self._clock() - started,
+                        attempt,
+                    )
                     return self.handle_response(response, method)
                 except niquests.Timeout as exc:
+                    logger.debug(
+                        "%s %s timed out after %.2fs (attempt %d)",
+                        method,
+                        target,
+                        self._clock() - started,
+                        attempt,
+                    )
                     raise TransportError(
                         f"Request timed out: {exc}", is_timeout=True
                     ) from exc
@@ -332,15 +428,25 @@ class AsyncHTTPTransport(HTTPTransportBase):
                     niquests.RequestException,
                     niquests.ConnectionError,
                 ) as exc:
+                    logger.debug(
+                        "%s %s failed after %.2fs (attempt %d): %s",
+                        method,
+                        target,
+                        self._clock() - started,
+                        attempt,
+                        type(exc).__name__,
+                    )
                     raise TransportError(f"Request failed: {exc}") from exc
                 except RateLimitError as exc:
-                    self._start_cooldown(exc)
+                    self._start_cooldown(exc, method, target)
                     raise
                 except HTTPStatusError:
                     raise
 
         try:
-            return await self._retry_decorator.copy(sleep=self._sleep)(_do_request)
+            return await self._retry_decorator.copy(
+                sleep=self._sleep, before_sleep=_log_retry
+            )(_do_request)
         except Exception as exc:
             if isinstance(exc, (RateLimitError, HTTPStatusError, TransportError)):
                 raise

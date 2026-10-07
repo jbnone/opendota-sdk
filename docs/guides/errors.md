@@ -22,7 +22,7 @@ for failures, not absent data.
 | Type | Raised when |
 |---|---|
 | [`TransportError`][opendota_sdk.TransportError] | A connection-level failure (DNS, timeout, refused connection). Carries `is_timeout`, `True` when the request timed out rather than failing another way. |
-| [`HTTPStatusError`][opendota_sdk.HTTPStatusError] | The API responds with a non-2xx status. Carries `status_code`, `method`, `url`, `response_text`, and `headers`. |
+| [`HTTPStatusError`][opendota_sdk.HTTPStatusError] | The API responds with a non-2xx status. Carries `status_code`, `method`, `url`, `response_text`, and `headers`. A 400 on every request usually means a malformed or unknown API key — see [Configuration → API key](configuration.md#api-key). |
 | [`RateLimitError`][opendota_sdk.RateLimitError] | The API responds 429 and the client could not, or should not, wait it out. Carries `retry_after` (seconds, or `None` if unknown) and `is_daily_limit`. |
 | [`ResponseDecodeError`][opendota_sdk.ResponseDecodeError] | The response body isn't valid JSON. |
 

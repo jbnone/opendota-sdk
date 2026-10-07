@@ -17,6 +17,23 @@ client = OpenDotaAsyncClient(
 Covers the common cases. `api_key` falls back to the `OPENDOTA_API_KEY` environment
 variable when omitted.
 
+## API key
+
+Without a key, OpenDota allows 60 requests a minute and 3,000 a day; with one, 300 a
+minute and no daily cap (usage beyond the free allowance is billed). The key is sent as
+`Authorization: Bearer <key>`, and surrounding whitespace — such as a trailing newline
+from a secrets file — is stripped first.
+
+OpenDota checks the key on every request. A malformed or unknown key fails immediately
+with an [`HTTPStatusError`][opendota_sdk.HTTPStatusError] (status 400) whose
+`response_text` says which; it is not retried, and the request is not silently sent
+anonymously instead.
+
+!!! note "Upgrading from 0.1.0a8 or earlier"
+    Earlier versions sent the key in a header OpenDota ignores, so every request was
+    anonymous no matter what key you set. If your key is wrong or cancelled, requests
+    that used to succeed will now fail with that 400 — fix or remove the key.
+
 ## From the environment
 
 ```python

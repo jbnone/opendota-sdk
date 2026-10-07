@@ -616,7 +616,9 @@ enforce the rest.
   OpenDota also accepts it as `?api_key=`. Transport lines therefore show the API-relative path
   via `_log_target()`, which redacts `api_key`, never `build_url()` output or headers. Failures
   are summarized with `_describe_failure()`, never `str(exc)`, because exception text can embed
-  full URLs and response bodies.
+  full URLs and response bodies. Objects that hold the key must not print it either:
+  `OpenDotaClientConfig.api_key` is `field(repr=False)`, so a config that ends up in a log
+  line, an f-string, or a traceback stays safe. Any new field holding a secret gets the same.
 - **The library configures nothing:** no handlers, no `basicConfig`, no level changes. That
   includes `NullHandler`: with no handler, Python's last-resort handler still surfaces
   `WARNING` data problems for apps that configure no logging, and a `NullHandler` would
