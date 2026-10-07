@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from types import TracebackType
 from typing import Any, Self
 
@@ -135,7 +136,9 @@ class OpenDotaAsyncClient:
                 merged_hero = {**heroes_constants[hero_id], **hero}
             else:
                 logger.warning(
-                    f"Hero ID {hero_id} from /heroes not found in /constants/heroes, using API data only"
+                    "Hero id %s from /heroes not found in /constants/heroes; "
+                    "using API data only",
+                    hero_id,
                 )
                 merged_hero = dict(hero)
 
@@ -143,7 +146,9 @@ class OpenDotaAsyncClient:
             hero_ability_data = hero_abilities.get(hero_name)
             if hero_ability_data is None:
                 logger.warning(
-                    f"Hero name {hero_name!r} not found in /constants/hero_abilities, no abilities/talents"
+                    "Hero name %r not found in /constants/hero_abilities; "
+                    "it will have no abilities or talents",
+                    hero_name,
                 )
             else:
                 merged_hero["abilities"] = hero_ability_data.get("abilities")
@@ -173,6 +178,7 @@ class OpenDotaAsyncClient:
         if self._heroes_cache is None:
             async with self._heroes_lock:
                 if self._heroes_cache is None:
+                    started = time.perf_counter()
                     (
                         heroes_api,
                         heroes_constants,
@@ -197,6 +203,11 @@ class OpenDotaAsyncClient:
                     self._heroes_by_id = {hero.id: hero for hero in heroes}
                     self._heroes_by_name = {hero.name: hero for hero in heroes}
                     self._heroes_cache = heroes
+                    logger.debug(
+                        "Loaded %d heroes from 5 payloads in %.2fs; cached on client",
+                        len(heroes),
+                        time.perf_counter() - started,
+                    )
 
         return list(self._heroes_cache)
 
@@ -245,11 +256,17 @@ class OpenDotaAsyncClient:
         if self._hero_stats_cache is None:
             async with self._hero_stats_lock:
                 if self._hero_stats_cache is None:
+                    started = time.perf_counter()
                     raw_stats = await self._get("/heroStats")
                     stats = self._assembler.list_hero_stats(raw_stats)
                     self._hero_stats_by_id = {stat.hero_id: stat for stat in stats}
                     self._hero_stats_by_name = {stat.hero_name: stat for stat in stats}
                     self._hero_stats_cache = stats
+                    logger.debug(
+                        "Loaded statistics for %d heroes in %.2fs; cached on client",
+                        len(stats),
+                        time.perf_counter() - started,
+                    )
 
         return list(self._hero_stats_cache)
 
@@ -297,6 +314,7 @@ class OpenDotaAsyncClient:
         if self._items_cache is None:
             async with self._items_lock:
                 if self._items_cache is None:
+                    started = time.perf_counter()
                     items_data = await self._get("/constants/items")
                     raw_items = [
                         {**data, "name": name} for name, data in items_data.items()
@@ -305,6 +323,11 @@ class OpenDotaAsyncClient:
                     self._items_by_id = {item.id: item for item in items}
                     self._items_by_name = {item.name: item for item in items}
                     self._items_cache = items
+                    logger.debug(
+                        "Loaded %d items in %.2fs; cached on client",
+                        len(items),
+                        time.perf_counter() - started,
+                    )
 
         return list(self._items_cache)
 

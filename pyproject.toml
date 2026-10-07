@@ -77,7 +77,10 @@ show_missing = true
 fail_under = 90
 
 [tool.ruff.lint]
-extend-select = ["D"]
+# D: Google docstrings (AGENTS.md §10.4). G + LOG: lazy %-style logging calls and
+# correct logger use (AGENTS.md §10.6) -- an f-string message is formatted even
+# when the level is disabled, and breaks grouping in log aggregators.
+extend-select = ["D", "G", "LOG"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

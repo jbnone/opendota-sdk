@@ -56,6 +56,8 @@ Implemented today:
 - typed `Item`, `Hero`, and `HeroStats` models
 - internal transport, auth, retry, and error layers, including a per-client concurrency cap and
   rate-limit handling that waits out OpenDota's per-minute window (§8.2)
+- standard-library logging under the `opendota_sdk` logger: per-attempt and cache-fill detail at
+  DEBUG, retries and rate-limit pauses at INFO, data problems at WARNING (§10.6)
 
 Planned but not implemented yet:
 
@@ -185,7 +187,7 @@ src/opendota_sdk/
 ├── models.py            # Typed Item, Hero, and HeroStats models, plus item enums
 ├── py.typed             # PEP 561 marker; the package ships as typed
 └── http/
-    ├── _auth.py         # Header-based auth handling
+    ├── _auth.py         # API key as `Authorization: Bearer`, the only header OpenDota reads
     ├── _retry.py        # Retry policy and decorator builder
     └── _transport.py    # Async HTTP transport over niquests (no sync transport)
 ```
@@ -472,8 +474,11 @@ Existing coverage includes:
 
 - config behavior
 - auth behavior
-- retry behavior, the concurrency cap, and rate-limit handling (`test_retry.py`, driven
-  through the transport with a fake clock), plus 429 header parsing (`test_transport.py`)
+- retry behavior, the concurrency cap, and rate-limit handling (`test_retry.py`), plus 429
+  header parsing (`test_transport.py`); both retry and logging tests drive the transport through
+  the shared fake-clock harness in `tests/_transport_harness.py`
+- logging (`test_logging.py`): message text and level per event, no handlers installed, nothing
+  raised is also logged loudly, and the API key never reaching a log line
 - transport behavior
 - item assembly, plus a regression sweep over every real item (`test_items_fixture.py`)
 - hero merge/assembly, plus a regression sweep over every real hero (`test_heroes_fixture.py`)
@@ -493,6 +498,7 @@ For changes in the item or hero flow, prefer focused tests near the current patt
 - client-level async behavior tests, including the cache/single-flight behavior under `asyncio.gather`
 - for any new relationship method: that it raises without an active client, and that it delegates to
   the owning client method rather than reimplementing a fetch
+- the feature's log events, per §10.6: asserted with `caplog` by exact message and level
 
 If future player or match domains are added, test the vertical slice that actually exists rather than only internal helpers.
 
@@ -513,6 +519,8 @@ Always run `ruff check` and `ty check` on any file you touch and resolve issues 
 
 `ruff check` includes the pydocstyle (`D`) rules in Google convention, so a new public
 member without a docstring, or an `Args:` section that omits a parameter, fails lint (§10.4).
+It also includes `G` and `LOG`, so an f-string or `.format()` log message, or a call through
+the root logger, fails lint (§10.6).
 
 ---
 
@@ -579,6 +587,45 @@ When the architecture changes, update:
 
 The instructions file must describe the current repo shape first and the future direction second.
 
+### 10.6 Logging
+
+**Every new feature ships with logging.** From `DEBUG`/`INFO` output alone, someone should be
+able to reconstruct what the SDK did: what it fetched, what it retried, and why it paused. A
+feature that adds network calls, caching, waiting, or a fallback path without log lines is
+not done. `ruff` (`G`, `LOG`) enforces the call style; `tests/test_logging.py` and review
+enforce the rest.
+
+- **One logger per module:** `logger = logging.getLogger(__name__)`. They all sit under
+  `opendota_sdk`, the one name users enable. Never log through the root logger.
+- **Lazy `%`-style arguments**, never f-strings or `.format()` in the message:
+  `logger.debug("Loaded %d items", len(items))`. Nothing is formatted when the level is off,
+  and the constant message text groups cleanly in log aggregators.
+- **Levels:**
+  - `DEBUG` — per-request and per-attempt detail, and cache *fills*
+    (`GET /heroStats -> 200 in 0.51s (attempt 1)`, `Loaded 127 heroes …`). Cache *hits* stay
+    silent: a `gather` over every hero would otherwise drown the signal.
+  - `INFO` — events that change timing the caller will notice: retries and rate-limit pauses.
+  - `WARNING` — data problems the caller has no other way to learn about (a hero missing from
+    the constants). Not for expected, handled conditions.
+  - `ERROR`/`CRITICAL` — unused; anything that bad is raised.
+- **Don't log what you raise.** An exception handed to the caller is theirs to report;
+  logging it at `WARNING`+ as well reports it twice. A `DEBUG` line for the failed attempt is fine.
+- **Log an event once, not once per waiter.** A burst of concurrent 429s logs one pause,
+  emitted only when the cooldown deadline actually moves.
+- **Never log secrets, headers, or bodies.** The API key travels in a request header, and
+  OpenDota also accepts it as `?api_key=`. Transport lines therefore show the API-relative path
+  via `_log_target()`, which redacts `api_key`, never `build_url()` output or headers. Failures
+  are summarized with `_describe_failure()`, never `str(exc)`, because exception text can embed
+  full URLs and response bodies.
+- **The library configures nothing:** no handlers, no `basicConfig`, no level changes. That
+  includes `NullHandler`: with no handler, Python's last-resort handler still surfaces
+  `WARNING` data problems for apps that configure no logging, and a `NullHandler` would
+  silence them.
+- **Test it.** Assert the feature's key events with `caplog`, by exact message and level.
+  Anything that touches requests must keep `test_api_key_never_reaches_a_log_line` covering
+  it. `tests/_transport_harness.py` drives the transport with a fake clock, so timings in
+  messages are deterministic.
+
 ---
 
 ## 11. Anti-Drift Rules
@@ -611,6 +658,12 @@ When editing this project, do not introduce instruction drift in these areas:
 - do not replace `AsyncRetrying` with a synchronous `tenacity.Retrying`, and do not move the
   retry predicate back to `retry_if_result` — both silently disable retries entirely while
   leaving the config knobs and the docs looking correct (§8.1)
+- do not send the API key as `X-API-Key` (or any header other than `Authorization: Bearer`),
+  and do not make the header name configurable. OpenDota ignores other headers *without error*,
+  which is how every keyed request was silently served as anonymous for every release up to
+  0.1.0a8 — verified in `svc/web.ts` and live. Do not move it to `?api_key=` either: the key
+  would then sit in every request URL and in `HTTPStatusError.url`/its message. Tests pin the
+  exact header on the wire (`test_auth.py`)
 - do not reduce rate-limit handling to "honor `Retry-After`". OpenDota never sends that
   header; the minute-window wait in `_rate_limit_details()` is what actually fires (§8.2)
 - do not make the rate-limit cooldown per-request, or hold the concurrency slot across
@@ -618,6 +671,13 @@ When editing this project, do not introduce instruction drift in these areas:
   attempts on doomed sends and starving other requests; each is pinned by a test (§8.2)
 - do not describe `_transport.py` as having a sync implementation. `HTTPTransportBase` exists
   to share URL/header/response handling, not to leave room for a sync sibling (§2.1, §3.2)
+- do not add handlers (including `NullHandler`), `logging.basicConfig()`, or level changes to
+  library code, and do not log through the root logger. Output configuration belongs to the
+  application (§10.6)
+- do not log request headers, full URLs, response bodies, or `str(exc)` from the transport; any
+  of them can carry the API key or a payload. Use `_log_target()` and `_describe_failure()` (§10.6)
+- do not ship a feature that fetches, caches, waits, or falls back without log lines for those
+  events, and do not log at `WARNING`+ an error that is also raised to the caller (§10.6)
 - do not move examples ahead of implementation reality
 - do not add `mkdocs`, `mkdocs-material`, `mkdocs-gen-files`, or `mkdocs-literate-nav`
   back to the `docs` dependency group without a concrete need — the docs site runs on

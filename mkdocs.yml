@@ -64,4 +64,5 @@ nav:
       - Hero Statistics: guides/hero-stats.md
       - Configuration: guides/configuration.md
       - Errors: guides/errors.md
+      - Logging: guides/logging.md
   - API Reference: api/
