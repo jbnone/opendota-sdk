@@ -12,7 +12,7 @@ from opendota_sdk.assembler import Assembler
 from opendota_sdk.http._auth import AuthHandler
 from opendota_sdk.http._retry import RetryPolicy
 from opendota_sdk.http._transport import AsyncHTTPTransport
-from opendota_sdk.models import Hero, HeroStats, Item
+from opendota_sdk.models import Hero, HeroItemPopularity, HeroStats, Item
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,12 @@ class OpenDotaAsyncClient:
         self._hero_stats_by_id: dict[int, HeroStats] = {}
         self._hero_stats_by_name: dict[str, HeroStats] = {}
         self._hero_stats_lock = asyncio.Lock()
+
+        # Per-hero endpoints are cached per hero id, each behind its own lock: concurrent
+        # calls for one hero collapse to a single request, while different heroes still
+        # fetch in parallel instead of queueing behind one shared lock.
+        self._hero_item_popularity_cache: dict[int, HeroItemPopularity] = {}
+        self._hero_item_popularity_locks: dict[int, asyncio.Lock] = {}
 
     async def _get(
         self,
@@ -298,6 +304,69 @@ class OpenDotaAsyncClient:
         if hero_id is not None:
             return self._hero_stats_by_id.get(hero_id)
         return self._hero_stats_by_name.get(hero_name)
+
+    async def get_hero_item_popularity(self, *, hero_id: int) -> HeroItemPopularity:
+        """Fetch what a hero buys in each phase of the game, with every item resolved.
+
+        Fetches `/heroes/{hero_id}/itemPopularity` alongside the item constants (via
+        `get_items()`, so those are fetched at most once per client) and turns each item
+        id into an `Item`. See `HeroItemPopularity` for what the counts measure.
+
+        Cached per hero: concurrent calls for the same hero share one request, and calls
+        for different heroes run in parallel. Unlike `get_hero()` and `get_hero_stat()`,
+        this takes an id only -- those resolve a name from a bulk payload they already
+        hold, whereas resolving one here would mean fetching every hero first. Callers
+        holding a name can use `get_hero(hero_name=...)` and then
+        `Hero.get_item_popularity()`.
+
+        Args:
+            hero_id: Numeric hero id.
+
+        Returns:
+            The hero's item popularity. OpenDota answers an unknown hero id with empty
+            data rather than an error, so check `HeroItemPopularity.is_empty`.
+
+        Raises:
+            OpenDotaError: If a request fails or the payload is malformed.
+        """
+        cached = self._hero_item_popularity_cache.get(hero_id)
+        if cached is not None:
+            return cached
+
+        # Get-or-create with no await in between, so racing tasks share one lock.
+        lock = self._hero_item_popularity_locks.get(hero_id)
+        if lock is None:
+            lock = self._hero_item_popularity_locks[hero_id] = asyncio.Lock()
+
+        async with lock:
+            cached = self._hero_item_popularity_cache.get(hero_id)
+            if cached is None:
+                started = time.perf_counter()
+                raw, _ = await asyncio.gather(
+                    self._get(f"/heroes/{hero_id}/itemPopularity"),
+                    self.get_items(),
+                )
+                cached = self._assembler.normalize_hero_item_popularity(
+                    raw, hero_id=hero_id, items_by_id=self._items_by_id
+                )
+                self._hero_item_popularity_cache[hero_id] = cached
+                logger.debug(
+                    "Loaded item popularity for hero %d (%d items across 4 phases) "
+                    "in %.2fs; cached on client",
+                    hero_id,
+                    sum(
+                        len(phase)
+                        for phase in (
+                            cached.start_game,
+                            cached.early_game,
+                            cached.mid_game,
+                            cached.late_game,
+                        )
+                    ),
+                    time.perf_counter() - started,
+                )
+
+        return cached
 
     async def get_items(self) -> list[Item]:
         """Fetch every item as a typed `Item`, cached per client.

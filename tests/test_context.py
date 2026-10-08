@@ -137,3 +137,23 @@ async def test_concurrent_hero_relationships_share_a_single_fetch():
     assert [result.hero_id for result in results if result is not None] == list(
         range(1, 21)
     )
+
+
+@pytest.mark.asyncio
+async def test_hero_get_item_popularity_outside_client_scope_raises():
+    with pytest.raises(OpenDotaError, match="No active OpenDotaAsyncClient"):
+        await _hero().get_item_popularity()
+
+
+@pytest.mark.asyncio
+async def test_hero_get_item_popularity_delegates_to_active_client():
+    """A one-line delegation: the client still owns the fetch, cache, and assembly."""
+    hero = _hero(hero_id=5)
+
+    async with OpenDotaAsyncClient() as client:
+        client.get_hero_item_popularity = AsyncMock(return_value="sentinel")
+
+        result = await hero.get_item_popularity()
+
+    assert result == "sentinel"
+    client.get_hero_item_popularity.assert_awaited_once_with(hero_id=5)

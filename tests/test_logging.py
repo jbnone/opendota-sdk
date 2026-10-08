@@ -211,3 +211,23 @@ class _PermissiveAssembler:
 
     def normalize_hero(self, merged, abilities_by_name):
         return merged
+
+
+@pytest.mark.asyncio
+async def test_item_popularity_logs_its_cache_fill_once(sdk_logs):
+    items = {"branches": {"id": 16, "dname": "Iron Branch", "cost": 50}}
+    payload = {"start_game_items": {"16": 3}}
+
+    async def fake_get(path, **kwargs):
+        return items if path == "/constants/items" else payload
+
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(side_effect=fake_get)
+        await client.get_hero_item_popularity(hero_id=1)
+        await client.get_hero_item_popularity(hero_id=1)
+
+    fills = [m for m in messages(sdk_logs) if "item popularity" in m]
+    assert len(fills) == 1
+    assert fills[0].startswith(
+        "Loaded item popularity for hero 1 (1 items across 4 phases) in "
+    )

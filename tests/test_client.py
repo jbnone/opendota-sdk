@@ -572,3 +572,129 @@ async def test_client_passes_concurrency_and_retry_after_to_the_transport():
 def test_client_rejects_non_positive_concurrency():
     with pytest.raises(ValueError, match="max_concurrency must be at least 1"):
         OpenDotaAsyncClient(max_concurrency=0)
+
+
+# --- Hero item popularity --------------------------------------------------------
+
+_POPULARITY_ITEMS = {
+    "blink": {"id": 1, "dname": "Blink Dagger", "cost": 2250},
+    "branches": {"id": 16, "dname": "Iron Branch", "cost": 50},
+}
+
+
+def _popularity_payload(late_game=None):
+    return {
+        "start_game_items": {"16": 167},
+        "early_game_items": {},
+        "mid_game_items": {},
+        "late_game_items": late_game if late_game is not None else {"1": 12},
+    }
+
+
+def _popularity_get(calls=None, delay=0.0, inflight=None):
+    """Path-keyed `_get` stand-in; optionally records calls and peak concurrency."""
+
+    async def fake_get(path, **kwargs):
+        if calls is not None:
+            calls.append(path)
+        if inflight is not None:
+            inflight["now"] += 1
+            inflight["peak"] = max(inflight["peak"], inflight["now"])
+        try:
+            await asyncio.sleep(delay)
+        finally:
+            if inflight is not None:
+                inflight["now"] -= 1
+        if path == "/constants/items":
+            return _POPULARITY_ITEMS
+        if path.endswith("/itemPopularity"):
+            return _popularity_payload()
+        raise AssertionError(f"unexpected path {path}")
+
+    return fake_get
+
+
+@pytest.mark.asyncio
+async def test_get_hero_item_popularity_resolves_items():
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(side_effect=_popularity_get())
+
+        popularity = await client.get_hero_item_popularity(hero_id=1)
+
+    assert popularity.hero_id == 1
+    assert popularity.start_game[0].item.descriptive_name == "Iron Branch"
+    assert popularity.start_game[0].purchases == 167
+    assert popularity.late_game[0].item.name == "blink"
+
+
+@pytest.mark.asyncio
+async def test_get_hero_item_popularity_is_cached_per_hero():
+    calls = []
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(side_effect=_popularity_get(calls))
+
+        first = await client.get_hero_item_popularity(hero_id=1)
+        second = await client.get_hero_item_popularity(hero_id=1)
+        await client.get_hero_item_popularity(hero_id=2)
+
+    assert first is second
+    assert sorted(calls) == [
+        "/constants/items",
+        "/heroes/1/itemPopularity",
+        "/heroes/2/itemPopularity",
+    ], "items fetched once; each hero fetched once"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_calls_for_one_hero_share_one_request():
+    calls = []
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(side_effect=_popularity_get(calls, delay=0.01))
+
+        results = await asyncio.gather(
+            *(client.get_hero_item_popularity(hero_id=1) for _ in range(5))
+        )
+
+    assert calls.count("/heroes/1/itemPopularity") == 1
+    assert all(result is results[0] for result in results)
+
+
+@pytest.mark.asyncio
+async def test_different_heroes_fetch_in_parallel_not_in_series():
+    """Per-hero locks: one shared lock would serialize these and peak at 1 in flight."""
+    calls = []
+    inflight = {"now": 0, "peak": 0}
+    async with OpenDotaAsyncClient() as client:
+        client.get_items = AsyncMock(return_value=[])
+        client._items_by_id = {}
+        client._get = AsyncMock(side_effect=_popularity_get(calls, 0.01, inflight))
+
+        await asyncio.gather(
+            *(
+                client.get_hero_item_popularity(hero_id=hero_id)
+                for hero_id in range(1, 6)
+            )
+        )
+
+    assert len(calls) == 5
+    assert inflight["peak"] == 5
+
+
+@pytest.mark.asyncio
+async def test_unknown_hero_item_popularity_is_empty_not_an_error():
+    async def fake_get(path, **kwargs):
+        if path == "/constants/items":
+            return _POPULARITY_ITEMS
+        return {
+            "start_game_items": {},
+            "early_game_items": {},
+            "mid_game_items": {},
+            "late_game_items": {},
+        }
+
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(side_effect=fake_get)
+
+        popularity = await client.get_hero_item_popularity(hero_id=99999)
+
+    assert popularity.is_empty

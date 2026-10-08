@@ -26,6 +26,7 @@ from opendota_sdk.models import (
     Hero,
     HeroAbility,
     HeroBracketStats,
+    HeroItemPopularity,
     HeroStats,
     HeroTalent,
     Item,
@@ -34,6 +35,7 @@ from opendota_sdk.models import (
     ItemQuality,
     ItemTargetTeam,
     ItemTargetType,
+    PopularItem,
 )
 
 __version__ = version("opendota-sdk")
@@ -47,6 +49,7 @@ __all__ = [
     "HeroAbility",
     "HeroAttackType",
     "HeroBracketStats",
+    "HeroItemPopularity",
     "HeroPrimaryAttribute",
     "HeroRole",
     "HeroSkillBracket",
@@ -62,6 +65,7 @@ __all__ = [
     "OpenDotaAsyncClient",
     "OpenDotaClientConfig",
     "OpenDotaError",
+    "PopularItem",
     "RateLimitError",
     "ResponseDecodeError",
     "TransportError",

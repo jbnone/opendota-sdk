@@ -1,5 +1,7 @@
 """Tests for item record parsing and item assembly."""
 
+import logging
+
 import pytest
 
 from opendota_sdk._errors import OpenDotaError
@@ -1101,3 +1103,127 @@ def test_normalize_int_list_skips_unparseable_entries(assembler):
     assert assembler._normalize_int_list([1, "2", None, "nope", 3.7]) == [1, 2, 3]
     assert assembler._normalize_int_list(None) == []
     assert assembler._normalize_int_list(5) == [5]
+
+
+# --- Hero item popularity --------------------------------------------------------
+
+
+@pytest.fixture
+def popularity_items(assembler):
+    raw = [
+        {"id": 1, "name": "blink", "dname": "Blink Dagger", "cost": 2250},
+        {"id": 16, "name": "branches", "dname": "Iron Branch", "cost": 50},
+        {"id": 29, "name": "boots", "dname": "Boots of Speed", "cost": 500},
+        {"id": 145, "name": "bfury", "dname": "Battle Fury", "cost": 4100},
+    ]
+    return {item.id: item for item in assembler.list_items(raw)}
+
+
+def test_item_popularity_resolves_ids_to_items(assembler, popularity_items):
+    popularity = assembler.normalize_hero_item_popularity(
+        {
+            "start_game_items": {"16": 167},
+            "early_game_items": {"29": 98},
+            "mid_game_items": {"145": 95},
+            "late_game_items": {"1": 12},
+        },
+        hero_id=1,
+        items_by_id=popularity_items,
+    )
+
+    assert popularity.hero_id == 1
+    assert popularity.start_game[0].item.descriptive_name == "Iron Branch"
+    assert popularity.start_game[0].purchases == 167
+    assert [e.item.name for e in popularity.early_game] == ["boots"]
+    assert [e.item.name for e in popularity.mid_game] == ["bfury"]
+    assert [e.item.name for e in popularity.late_game] == ["blink"]
+
+
+def test_item_popularity_sorts_most_purchased_first_with_stable_ties(
+    assembler, popularity_items
+):
+    popularity = assembler.normalize_hero_item_popularity(
+        {"mid_game_items": {"1": 5, "16": 40, "29": 40, "145": 90}},
+        hero_id=1,
+        items_by_id=popularity_items,
+    )
+
+    assert [(e.item.name, e.purchases) for e in popularity.mid_game] == [
+        ("bfury", 90),
+        ("boots", 40),
+        ("branches", 40),
+        ("blink", 5),
+    ]
+
+
+def test_item_popularity_missing_phase_is_empty(assembler, popularity_items):
+    popularity = assembler.normalize_hero_item_popularity(
+        {"start_game_items": {"16": 3}}, hero_id=1, items_by_id=popularity_items
+    )
+
+    assert popularity.early_game == []
+    assert popularity.mid_game == []
+    assert popularity.late_game == []
+    assert not popularity.is_empty
+
+
+def test_item_popularity_for_unknown_hero_is_empty(assembler, popularity_items):
+    """OpenDota answers an unknown hero id with four empty phases and HTTP 200."""
+    empty = {
+        "start_game_items": {},
+        "early_game_items": {},
+        "mid_game_items": {},
+        "late_game_items": {},
+    }
+
+    popularity = assembler.normalize_hero_item_popularity(
+        empty, hero_id=99999, items_by_id=popularity_items
+    )
+
+    assert popularity.is_empty
+
+
+def test_item_popularity_drops_unknown_items_with_one_warning(
+    assembler, popularity_items, caplog
+):
+    raw = {
+        "start_game_items": {"16": 3, "9001": 7},
+        "late_game_items": {"1": 2, "9002": 1, "not-an-id": 4},
+    }
+
+    with caplog.at_level(logging.WARNING, logger="opendota_sdk"):
+        popularity = assembler.normalize_hero_item_popularity(
+            raw, hero_id=1, items_by_id=popularity_items
+        )
+
+    assert [e.item.id for e in popularity.start_game] == [16]
+    assert [e.item.id for e in popularity.late_game] == [1]
+    assert popularity.raw == raw, "dropped ids stay available on raw"
+    assert [r.getMessage() for r in caplog.records] == [
+        (
+            "Item popularity for hero 1 references 3 item id(s) missing from "
+            "/constants/items (9001, 9002, not-an-id); leaving them out"
+        )
+    ]
+
+
+def test_item_popularity_logs_nothing_when_everything_resolves(
+    assembler, popularity_items, caplog
+):
+    with caplog.at_level(logging.DEBUG, logger="opendota_sdk"):
+        assembler.normalize_hero_item_popularity(
+            {"start_game_items": {"16": 3}}, hero_id=1, items_by_id=popularity_items
+        )
+
+    assert caplog.records == []
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [[], "nope", None, {"mid_game_items": ["145"]}, {"late_game_items": 3}],
+)
+def test_item_popularity_rejects_malformed_payloads(assembler, popularity_items, raw):
+    with pytest.raises(OpenDotaError, match="Cannot build HeroItemPopularity"):
+        assembler.normalize_hero_item_popularity(
+            raw, hero_id=1, items_by_id=popularity_items
+        )

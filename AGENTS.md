@@ -52,8 +52,11 @@ Implemented today:
 - item constants flow via `get_items()`
 - hero list flow via `get_heroes()` returning typed `Hero` models
 - hero statistics flow via `get_hero_stats()`/`get_hero_stat()` returning typed `HeroStats` models
-- one relationship method, `Hero.get_stats()`, resolved through an ambient client (§6.2)
-- typed `Item`, `Hero`, and `HeroStats` models
+- hero item popularity via `get_hero_item_popularity()` returning `HeroItemPopularity`, with every
+  item id resolved to an `Item` — the first cross-domain join, and the first per-key endpoint (§6.3)
+- two relationship methods, `Hero.get_stats()` and `Hero.get_item_popularity()`, resolved through an
+  ambient client (§6.2)
+- typed `Item`, `Hero`, `HeroStats`, and `HeroItemPopularity` models
 - internal transport, auth, retry, and error layers, including a per-client concurrency cap and
   rate-limit handling that waits out OpenDota's per-minute window (§8.2)
 - standard-library logging under the `opendota_sdk` logger: per-attempt and cache-fill detail at
@@ -65,7 +68,7 @@ Planned but not implemented yet:
 - match domain objects
 - service-per-resource architecture
 - session container abstraction
-- relationship navigation beyond the single `Hero.get_stats()` case — no descriptor, query,
+- relationship navigation beyond the two hand-written `Hero` methods — no descriptor, query,
   or resource-graph machinery exists, and none should be added speculatively (§6.2, §11)
 
 When writing code or instructions, be explicit about whether something is **current** or **target architecture**.
@@ -127,8 +130,8 @@ This principle is strongest today in the item flow and should guide future work.
 - client entry points are always async
 - do not add sync mirrors for convenience
 
-Domain objects that need network access expose it as an async method — `Hero.get_stats()` is the
-first and currently only instance (§6.2).
+Domain objects that need network access expose it as an async method — `Hero.get_stats()` and
+`Hero.get_item_popularity()` are the two instances today (§6.2, §6.3).
 
 ### 3.3 Internal Enrichment
 
@@ -140,6 +143,9 @@ Current examples:
 - `OpenDotaAsyncClient.get_heroes()` merges `/heroes` with `/constants/heroes` and returns typed `Hero` models
 - `OpenDotaAsyncClient.get_hero_stats()` folds `/heroStats`'s flat `{bracket}_pick`/`{bracket}_win` keys
   into typed `HeroBracketStats` entries and derives win rates, instead of exposing the raw numeric keys
+- `OpenDotaAsyncClient.get_hero_item_popularity()` turns `/heroes/{id}/itemPopularity`'s bare item ids
+  into full `Item` objects, joining two domains so the caller never cross-references
+  `/constants/items` by hand
 
 ### 3.4 Incremental Generalization
 
@@ -161,7 +167,8 @@ Public exports should be limited to stable, user-facing types such as:
 - `OpenDotaAsyncClient`
 - `OpenDotaClientConfig`
 - SDK error types
-- selected user-facing models like `Item`, `Hero`, and `HeroStats`, plus the enums they expose
+- selected user-facing models like `Item`, `Hero`, `HeroStats`, and `HeroItemPopularity` (with its
+  `PopularItem` entries), plus the enums they expose
   (`HeroSkillBracket` is exported because `HeroBracketStats.bracket` hands it to callers)
 
 The ambient-client helpers in `_context.py` are **not** exported: `active_client()`, `bind_client()`,
@@ -181,10 +188,10 @@ src/opendota_sdk/
 ├── _context.py          # Ambient active-client binding for model relationship methods
 ├── _errors.py           # SDK-specific exception types
 ├── _records.py          # Raw item record boundary before assembly
-├── assembler.py         # Item, hero, and hero-stats normalization and assembly
+├── assembler.py         # Item, hero, hero-stats, and item-popularity normalization
 ├── client.py            # OpenDotaAsyncClient (owns all raw fetching and caching)
 ├── enums.py             # Hero-related enums and shared enum types
-├── models.py            # Typed Item, Hero, and HeroStats models, plus item enums
+├── models.py            # Typed Item, Hero, HeroStats, HeroItemPopularity models, item enums
 ├── py.typed             # PEP 561 marker; the package ships as typed
 └── http/
     ├── _auth.py         # API key as `Authorization: Bearer`, the only header OpenDota reads
@@ -308,8 +315,9 @@ parts that are actually new:
 - computed `win_rate` properties on `HeroBracketStats` and `HeroStats` (`pub_`/`turbo_`/`pro_`), all
   `None` when the matching pick count is zero
 
-`Hero.get_stats()` is the SDK's **only** relationship method today. It resolves its client from a
-`ContextVar` in `_context.py` rather than holding one:
+`Hero.get_stats()` was the SDK's first relationship method; `Hero.get_item_popularity()` (§6.3) is
+the second, built the same way. Each resolves its client from a `ContextVar` in `_context.py`
+rather than holding one:
 
 - `OpenDotaAsyncClient.__aenter__` calls `bind_client(self)`; `__aexit__` calls `unbind_client()`.
   `activate()`/`deactivate()` expose the same thing outside `async with`.
@@ -334,6 +342,46 @@ Why this shape, so it is not re-litigated:
 - no scope/handle object (`client.hero(id).get_stats()`) and no query/source/descriptor layer exists.
   Both were considered and rejected as more machinery than one relationship justifies; see §11.
 
+### 6.3 Hero Item Popularity And Per-Key Caching
+
+`/heroes/{hero_id}/itemPopularity` returns four objects — `start_game_items`, `early_game_items`,
+`mid_game_items`, `late_game_items` — each `{item_id: count}`. Verified live and in OpenDota's
+source (`getHeroItemPopularity` in `svc/util/queries.ts`), not assumed:
+
+- the counts are **purchases** across the hero's **100 most recently parsed matches**, so one item
+  can exceed 100. Phases are game-clock windows with cost floors: start ≤ 0:00 and ≤ 600 gold;
+  early 0–10 min and ≥ 500; mid 10–25 min and ≥ 1,000; late ≥ 25 min and ≥ 2,000. OpenDota's API
+  docs call this "professional games", but the query samples **any parsed match** — the docstrings
+  and guide say so, and should not repeat the docs' claim.
+- an **unknown hero id is HTTP 200 with four empty phases**, indistinguishable from a hero with no
+  parsed matches, so it is not an error; `HeroItemPopularity.is_empty` is how callers tell.
+
+Shape and decisions:
+
+- `HeroItemPopularity` has one list per phase (`start_game` … `late_game`) of `PopularItem(item,
+  purchases)`, sorted most-purchased first, ties by item name. Four fields rather than a
+  phase enum: nothing iterates phases generically yet (§3.4). `raw` is kept, because ids that fail to
+  resolve are dropped from the lists and `raw` is the only place they survive.
+- **the cross-domain join stays client-unaware:** the client fetches the payload and
+  `get_items()` concurrently, then passes `items_by_id` into
+  `Assembler.normalize_hero_item_popularity()` — the same pattern as `_make_heroes()` receiving its
+  payloads. The assembler never fetches. Ids missing from the item constants (possible mid-patch)
+  are dropped with **one WARNING per payload**, per §10.6; all ids resolved against live data and
+  the vendored fixture when this was built.
+- **id only, no `hero_name`.** `get_hero()`/`get_hero_stat()` resolve names for free from bulk
+  payloads they hold; this endpoint has none, so a name parameter would hide a five-payload hero
+  fetch behind a lookup. Name holders go `get_hero(hero_name=...)` → `Hero.get_item_popularity()`.
+- **per-key caching, the first instance.** `_hero_item_popularity_cache` and
+  `_hero_item_popularity_locks` are dicts keyed by hero id. Concurrent calls for one hero collapse to
+  one request; different heroes fetch in parallel. A single shared lock would still pass a
+  "fetches once" test while serializing every hero — `test_different_heroes_fetch_in_parallel_not_in_series`
+  pins this by asserting peak concurrency, not elapsed time. The per-key lock is created with a
+  get-then-insert that has no `await` in between, so racing tasks cannot end up with two locks for
+  one hero.
+- regression coverage mirrors items and heroes: recorded payloads for two heroes in
+  `tests/fixtures/opendota_api/` are resolved against `tests/fixtures/items.json` in
+  `test_item_popularity_fixture.py`.
+
 ---
 
 ## 7. Future Architecture Direction
@@ -346,15 +394,19 @@ If future work introduces:
 - `PlayerService`
 - `MatchService`
 - `HeroService`
-- further domain objects that own async relationship methods, beyond `Hero.get_stats()` (§6.2)
+- further domain objects that own async relationship methods, beyond the two on `Hero` (§6.2, §6.3)
 
 then that work should be introduced deliberately, with tests and updated docs, rather than implied by the instructions file alone.
 
 `Hero.get_stats()` was introduced exactly that way and is the template to copy: declare the client
-method that owns the fetch, then add a one-line delegating async method on the model. A second and
-third relationship should be written the same hand-rolled way. Only once that delegation has visibly
-repeated — and once per-key endpoints like `/heroes/{id}/matchups` force per-key single-flight, which
-the current bulk cache+lock does not cover — is a shared abstraction worth extracting.
+method that owns the fetch, then add a one-line delegating async method on the model.
+`Hero.get_item_popularity()` was the second, written the same hand-rolled way; a third should be too.
+
+The per-key trigger has now fired **once**: item popularity needed per-key single-flight, and §6.3
+records the shape it took. That is still not grounds for a shared abstraction. Two delegating
+one-liners are not duplication worth factoring out, and one per-key cache is a single data point.
+The next per-key endpoint (matchups, durations, benchmarks) should copy §6.3 by hand; only if the
+keying, lock lifecycle, and invalidation needs then visibly match is a helper worth extracting.
 
 Until then:
 
@@ -486,6 +538,9 @@ Existing coverage includes:
 - item assembly, plus a regression sweep over every real item (`test_items_fixture.py`)
 - hero merge/assembly, plus a regression sweep over every real hero (`test_heroes_fixture.py`)
 - hero stats assembly (bracket folding, win rates, required-field errors)
+- hero item popularity: assembler resolution/sorting/unresolved-id handling (`test_assembler.py`),
+  a regression sweep over recorded real payloads (`test_item_popularity_fixture.py`), and
+  client-level per-hero caching and parallelism (`test_client.py`)
 - ambient client binding and `Hero.get_stats()` (`test_context.py`), including nesting, the
   unbound-client error, and the gather-collapses-to-one-request property
 - async client behavior
@@ -549,8 +604,8 @@ Ask:
 - use dataclasses for typed domain data
 - keep value-like models predictable
 - if a model is meant to represent static game data, consider immutability deliberately, but do not change mutability casually without checking current usage
-- `Item`, `Hero`, `ItemAbility`, `HeroAbility`, `HeroTalent`, `HeroStats`, `HeroBracketStats`, and
-  `Attribute` are all `frozen=True` — a
+- `Item`, `Hero`, `ItemAbility`, `HeroAbility`, `HeroTalent`, `HeroStats`, `HeroBracketStats`,
+  `HeroItemPopularity`, `PopularItem`, and `Attribute` are all `frozen=True` — a
   deliberate decision (nothing in the codebase mutated a constructed instance, verified before freezing).
   Note this only blocks reassigning a field; it does not make nested `list`/`dict` fields (e.g. `raw`,
   `abilities`) immutable, and `hash()` on these models will raise since they hold unhashable list fields.
@@ -669,6 +724,12 @@ When editing this project, do not introduce instruction drift in these areas:
   0.1.0a8 — verified in `svc/web.ts` and live. Do not move it to `?api_key=` either: the key
   would then sit in every request URL and in `HTTPStatusError.url`/its message. Tests pin the
   exact header on the wire (`test_auth.py`)
+- do not add `hero_name` to per-hero endpoints like `get_hero_item_popularity()` "for symmetry",
+  and do not collapse their per-hero locks into one shared lock. The first would hide a full hero
+  fetch behind a lookup; the second would serialize every hero while still passing a naive
+  "fetches once" test (§6.3)
+- do not describe item popularity as professional-match data. OpenDota's docs say so, but its
+  query samples the hero's last 100 parsed matches of any kind (§6.3)
 - do not reduce rate-limit handling to "honor `Retry-After`". OpenDota never sends that
   header; the minute-window wait in `_rate_limit_details()` is what actually fires (§8.2)
 - do not make the rate-limit cooldown per-request, or hold the concurrency slot across
@@ -707,9 +768,9 @@ If the implementation changes materially, update this file in the same work.
 2. Continue polishing the item domain slice as the reference architecture.
 3. Improve the hero flow without prematurely forcing a generalized service layer.
 4. Introduce new domain entities only when their owning fetch, enrichment, and model path is clear.
-5. Add the remaining hero-scoped endpoints (`/heroes/{id}/matchups`, `/durations`, `/players`,
-   `/itemPopularity`) one at a time, hand-rolled per §7, and let the per-key caching need that emerges
-   there decide whether a shared abstraction is warranted.
+5. `/itemPopularity` is done (§6.3). Add the remaining hero-scoped endpoints (`/heroes/{id}/matchups`,
+   `/durations`, `/players`, and `/benchmarks`) one at a time, hand-rolled per §7; the next one decides
+   whether §6.3's per-key caching is worth extracting.
 6. `README.md` has badges, a one-line description, the install line, and a link out to
    the docs site. It is also the PyPI landing page (`readme = "README.md"`), so the
    `async with` quickstart is the next thing worth adding.

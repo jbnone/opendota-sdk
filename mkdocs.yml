@@ -62,6 +62,7 @@ nav:
       - Items: guides/items.md
       - Heroes: guides/heroes.md
       - Hero Statistics: guides/hero-stats.md
+      - Hero Item Popularity: guides/hero-item-popularity.md
       - Configuration: guides/configuration.md
       - Errors: guides/errors.md
       - Logging: guides/logging.md

@@ -1,8 +1,9 @@
-"""Typed domain models for items, heroes, and hero statistics.
+"""Typed domain models for items, heroes, hero statistics, and hero item popularity.
 
 Every model here is a frozen dataclass assembled by the SDK from one or more OpenDota
 payloads. Callers receive these instead of raw dictionaries; the original payload is
-retained on `raw` for the top-level models (`Item`, `Hero`, `HeroStats`).
+retained on `raw` for the top-level models (`Item`, `Hero`, `HeroStats`,
+`HeroItemPopularity`).
 """
 
 from dataclasses import dataclass, field
@@ -267,6 +268,71 @@ class HeroBracketStats:
 
 
 @dataclass(frozen=True)
+class PopularItem:
+    """One item and how often a hero bought it in a given phase of the game.
+
+    Attributes:
+        item: The item, resolved from its id against the item constants.
+        purchases: How many times it was bought in that phase across the sampled matches.
+            Counts purchases, not matches: an item bought twice in one match counts twice,
+            so this can exceed the number of matches sampled.
+    """
+
+    item: Item
+    purchases: int
+
+
+@dataclass(frozen=True)
+class HeroItemPopularity:
+    """What a hero buys, split by phase of the game, from `/heroes/{hero_id}/itemPopularity`.
+
+    OpenDota samples the hero's 100 most recently parsed matches and counts every purchase
+    by game time, keeping only items above a cost floor for each phase -- so starting items
+    are cheap ones bought before the horn, and late-game items are the big purchases:
+
+    | Phase | Game time | Item cost |
+    |---|---|---|
+    | `start_game` | at or before 0:00 | 600 gold or less |
+    | `early_game` | 0:00 to 10:00 | at least 500 |
+    | `mid_game` | 10:00 to 25:00 | at least 1,000 |
+    | `late_game` | 25:00 onwards | at least 2,000 |
+
+    Each phase is sorted most-purchased first. OpenDota describes this data as coming from
+    professional games; its query in fact samples any parsed match.
+
+    Attributes:
+        hero_id: Numeric hero id, matching `Hero.id`.
+        start_game: Items bought before the game clock starts.
+        early_game: Items bought in the first ten minutes.
+        mid_game: Items bought between ten and twenty-five minutes.
+        late_game: Items bought from twenty-five minutes on.
+        raw: The original payload, keyed by item id. Ids with no matching item are kept
+            here even though they are left out of the phase lists.
+    """
+
+    hero_id: int
+    start_game: list[PopularItem] = field(default_factory=list)
+    early_game: list[PopularItem] = field(default_factory=list)
+    mid_game: list[PopularItem] = field(default_factory=list)
+    late_game: list[PopularItem] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    @property
+    def is_empty(self) -> bool:
+        """Whether OpenDota returned no purchases at all.
+
+        OpenDota answers an unknown hero id the same way as a hero with no parsed matches:
+        four empty phases and HTTP 200. This is the way to tell that nothing came back.
+
+        Returns:
+            `True` when every phase is empty.
+        """
+        return not (
+            self.start_game or self.early_game or self.mid_game or self.late_game
+        )
+
+
+@dataclass(frozen=True)
 class HeroStats:
     """Live aggregate pick/win statistics for a hero, from `/heroStats`.
 
@@ -453,6 +519,23 @@ class Hero:
                 `async with OpenDotaAsyncClient()` and without `client.activate()`.
         """
         return await active_client().get_hero_stat(hero_id=self.id)
+
+    async def get_item_popularity(self) -> HeroItemPopularity:
+        """Fetch what this hero buys in each phase of the game, via the active client.
+
+        Delegates to `OpenDotaAsyncClient.get_hero_item_popularity()` on the client bound
+        to the current context. Unlike `get_stats()`, this is a per-hero endpoint, so
+        gathering it over every hero costs one request per hero, not one in total; repeat
+        calls for the same hero are served from that client's cache.
+
+        Returns:
+            The hero's item popularity, with every item resolved to an `Item`.
+
+        Raises:
+            OpenDotaError: If no client is active, i.e. this is called outside
+                `async with OpenDotaAsyncClient()` and without `client.activate()`.
+        """
+        return await active_client().get_hero_item_popularity(hero_id=self.id)
 
     def as_dict(self) -> dict[str, Any]:
         """Return a copy of the raw merged payload this hero was assembled from.

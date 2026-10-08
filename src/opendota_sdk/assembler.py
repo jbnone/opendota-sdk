@@ -1,6 +1,7 @@
 """Model assembler that builds domain models from raw constants payloads."""
 
-from collections.abc import Sequence
+import logging
+from collections.abc import Mapping, Sequence
 from enum import Enum
 from typing import Any, TypeVar
 
@@ -20,6 +21,7 @@ from opendota_sdk.models import (
     Hero,
     HeroAbility,
     HeroBracketStats,
+    HeroItemPopularity,
     HeroStats,
     HeroTalent,
     Item,
@@ -28,9 +30,20 @@ from opendota_sdk.models import (
     ItemQuality,
     ItemTargetTeam,
     ItemTargetType,
+    PopularItem,
 )
 
 E = TypeVar("E", bound=Enum)
+
+logger = logging.getLogger(__name__)
+
+# `/heroes/{id}/itemPopularity` keys, in game order, mapped to `HeroItemPopularity` fields.
+_ITEM_POPULARITY_PHASES = (
+    ("start_game_items", "start_game"),
+    ("early_game_items", "early_game"),
+    ("mid_game_items", "mid_game"),
+    ("late_game_items", "late_game"),
+)
 
 
 class Assembler:
@@ -250,6 +263,72 @@ class Assembler:
     def list_hero_stats(self, raw_stats: Sequence[dict[str, Any]]) -> list[HeroStats]:
         """Build HeroStats models from a /heroStats payload."""
         return [self.normalize_hero_stats(raw) for raw in raw_stats]
+
+    def normalize_hero_item_popularity(
+        self,
+        raw: Any,
+        *,
+        hero_id: int,
+        items_by_id: Mapping[int, Item],
+    ) -> HeroItemPopularity:
+        """Build a HeroItemPopularity model, resolving each item id to its `Item`.
+
+        Each phase arrives as `{item_id: purchases}` and is turned into `PopularItem`
+        entries sorted most-purchased first (ties broken by item name, so the order is
+        stable). A phase missing from the payload is treated as empty. Item ids with no
+        match in `items_by_id` -- possible if OpenDota's data runs ahead of the item
+        constants mid-patch -- are left out of the lists, kept on `raw`, and reported in
+        one warning per payload.
+
+        Args:
+            raw: The `/heroes/{hero_id}/itemPopularity` payload.
+            hero_id: The hero the payload was fetched for; the payload does not repeat it.
+            items_by_id: Every known item, keyed by numeric id.
+
+        Returns:
+            The assembled item popularity.
+
+        Raises:
+            OpenDotaError: If the payload, or one of its phases, is not a JSON object.
+        """
+        if not isinstance(raw, dict):
+            raise OpenDotaError(
+                f"Cannot build HeroItemPopularity for hero {hero_id}: expected an "
+                f"object, got {type(raw).__name__}"
+            )
+
+        phases: dict[str, list[PopularItem]] = {}
+        unresolved: set[str] = set()
+        for payload_key, field_name in _ITEM_POPULARITY_PHASES:
+            counts = raw.get(payload_key) or {}
+            if not isinstance(counts, dict):
+                raise OpenDotaError(
+                    f"Cannot build HeroItemPopularity for hero {hero_id}: "
+                    f"{payload_key!r} is {type(counts).__name__}, expected an object"
+                )
+            entries: list[PopularItem] = []
+            for raw_item_id, raw_purchases in counts.items():
+                item_id = self._normalize_int(raw_item_id)
+                item = items_by_id.get(item_id) if item_id is not None else None
+                if item is None:
+                    unresolved.add(str(raw_item_id))
+                    continue
+                entries.append(
+                    PopularItem(item=item, purchases=self._require_int(raw_purchases))
+                )
+            entries.sort(key=lambda entry: (-entry.purchases, entry.item.name))
+            phases[field_name] = entries
+
+        if unresolved:
+            logger.warning(
+                "Item popularity for hero %d references %d item id(s) missing from "
+                "/constants/items (%s); leaving them out",
+                hero_id,
+                len(unresolved),
+                ", ".join(sorted(unresolved, key=lambda key: (len(key), key))),
+            )
+
+        return HeroItemPopularity(hero_id=hero_id, raw=dict(raw), **phases)
 
     def _normalize_brackets(self, raw: dict[str, Any]) -> list[HeroBracketStats]:
         """Fold the flat `{bracket}_pick`/`{bracket}_win` keys into typed entries."""
