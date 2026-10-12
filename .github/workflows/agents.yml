@@ -42,6 +42,7 @@ jobs:
       pull-requests: write
       issues: write
       actions: read  # lets Claude read CI results on the PR it opens
+      id-token: write  # exchanged for a short-lived Claude app token; without it the action cannot authenticate
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -92,6 +93,7 @@ jobs:
       contents: read
       pull-requests: write
       actions: read
+      id-token: write  # same OIDC-to-app-token exchange as `implement`
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
