@@ -19,3 +19,6 @@ docs/api/
 
 # Tests
 .coverage
+
+# Claude Code per-machine permissions
+.claude/settings.local.json

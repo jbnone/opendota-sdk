@@ -1,0 +1,126 @@
+# Agentic workflow — see AGENTS.md §15 for the roles, labels, and gates.
+#
+# Two gates stand between an idea and shipped code, and both belong to the
+# repository owner:
+#   1. `implement` fires only when the owner adds `approved`/`design-approved`,
+#      and the `agent-build` environment then waits for the owner's Approve click.
+#   2. The `protect-main` ruleset requires a pull request, green CI, and an owner
+#      review before anything merges, with no bypass for the Claude app.
+#
+# The action also refuses to run for actors without write access, so issues,
+# comments, and labels from anyone else never start a run. Keep it that way:
+# no `allowed_non_write_users`, no `allowed_bots: '*'`, no `pull_request_target`.
+# Fork pull requests never receive secrets, and `review` additionally checks
+# that the head lives in this repository.
+
+name: agents
+
+on:
+  issues:
+    types: [labeled]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  implement:
+    if: >-
+      github.event_name == 'issues' &&
+      github.event.sender.login == 'jbnone' &&
+      (github.event.label.name == 'approved' || github.event.label.name == 'design-approved')
+    runs-on: ubuntu-latest
+    environment: agent-build
+    timeout-minutes: 45
+    # One implementation at a time: a burst of labels queues instead of fanning out.
+    concurrency:
+      group: agents-implement
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read  # lets Claude read CI results on the PR it opens
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          enable-cache: false
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Run the developer agent
+        uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Tag mode on the labeled issue: a tracking comment, the full issue
+          # context, and a `claude/` branch for the work.
+          track_progress: true
+          # Only the owner's comments reach the model; the issue body is
+          # already vetted by the owner's label.
+          include_comments_by_actor: jbnone
+          additional_permissions: |
+            actions: read
+          prompt: |
+            You are the developer role for this repository. Read
+            `.claude/agents/developer.md` and follow it exactly for this issue.
+            Open the pull request yourself with `gh pr create` when the work is
+            done; do not stop at a link to a pre-filled PR page.
+          claude_args: |
+            --max-turns 80
+            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(uv run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(gh issue view:*),Bash(gh pr create:*)"
+
+  review:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'renovate[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # A new push to the same PR supersedes the review in flight.
+    concurrency:
+      group: agents-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          enable-cache: false
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Run the reviewer agent
+        uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          track_progress: true
+          include_comments_by_actor: jbnone
+          # PRs opened by the developer agent arrive with the Claude app as the
+          # actor. These two logins are the only bots that may trigger a run.
+          allowed_bots: "claude[bot],claude-code[bot]"
+          additional_permissions: |
+            actions: read
+          prompt: |
+            You are the reviewer role for this repository. Read
+            `.claude/agents/reviewer.md` and follow it exactly for this pull
+            request.
+          claude_args: |
+            --max-turns 40
+            --allowedTools "Read,Glob,Grep,Bash(uv run:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*),mcp__github_inline_comment__create_inline_comment"
