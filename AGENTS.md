@@ -911,8 +911,12 @@ from what those runs got wrong.
    runs under the `agent-build` environment, whose required reviewer is the owner. A run
    cannot start without the owner's Approve click, whatever added the label.
 3. The `protect-main` ruleset requires a PR, green CI, and an owner review. Its bypass
-   list holds Renovate only, in pull-request mode, so dependency automerge works while
-   the Claude app can push `claude/*` branches but never merge.
+   list holds two entries, both in pull-request mode: Renovate, so dependency automerge
+   works, and the Repository admin role, because GitHub never lets a PR's author approve
+   it and the owner is the only code owner — without that entry the owner's own PRs could
+   never merge. The Claude app is on neither list, so it can push `claude/*` branches but
+   never merge. On agent PRs the owner still approves rather than bypassing, so the
+   review is recorded.
 4. Spend is bounded three ways: one `implement` at a time (`concurrency`), `--max-turns`
    and `timeout-minutes` per job, and the API key living in its own Console workspace with
    a monthly limit. Only the owner's comments reach the model (`include_comments_by_actor`).
