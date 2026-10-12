@@ -56,7 +56,7 @@ docs = [
     # (see docs/gen_ref_pages.py's module docstring for the full story) and Material for
     # MkDocs' own team has moved on to Zensical as its Material-compatible successor.
     # It natively reads mkdocs.yml (see the file itself), so no config rewrite needed.
-    "zensical==0.0.62",
+    "zensical==0.0.69",
     # The handler Zensical's built-in mkdocstrings support renders through. Only the
     # bare handler package is needed -- not the `mkdocstrings` mkdocs-plugin package,
     # which Zensical replaces internally, and not `mkdocs-gen-files` /
