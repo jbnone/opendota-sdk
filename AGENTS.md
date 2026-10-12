@@ -927,10 +927,19 @@ from what those runs got wrong.
    and `timeout-minutes` per job, and the runs drawing on the owner's Claude subscription
    through a `claude setup-token` OAuth token (`CLAUDE_CODE_OAUTH_TOKEN`), whose plan limits
    are the ceiling. An API key was tried first and every run was rejected with "Credit
-   balance is too low": a key bills the Console organization's prepaid credit, which is a
-   separate account from the subscription, so do not switch back to `anthropic_api_key`
-   without funding that organization. Only the owner's comments reach the model
-   (`include_comments_by_actor`).
+   balance is too low", although the Console organization held the monthly API credit
+   that comes with the Max plan: that credit explicitly excludes Claude Code, and the
+   action is Claude Code. Do not switch back to `anthropic_api_key` without buying
+   Console credit. Only the owner's comments reach the model (`include_comments_by_actor`).
+5. Network access for `implement` is two literal `curl -sS` prefixes, one for
+   `api.opendota.com/api/` and one for `raw.githubusercontent.com/odota/`, so the developer
+   can record real fixtures and read OpenDota's source (§6.3). The first real run stopped
+   without them rather than invent data, which is the behavior to keep. `WebFetch` stays
+   off: the action bans it by default, and it summarizes pages through a small model, so it
+   cannot record raw JSON. The tool allowlist is not the real boundary, though:
+   `Bash(uv run:*)` already lets the agent run code with network access. What protects the
+   subscription token is `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` on both jobs, which strips
+   credentials from every subprocess while leaving GitHub tokens for `gh`. Do not remove it.
 
 Labels: `proposal` (groomer output, nothing runs), `needs-design` (architect, planned),
 `design-approved` and `approved` (implement). The action restores `.claude/` and `CLAUDE.md`

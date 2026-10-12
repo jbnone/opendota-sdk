@@ -28,7 +28,17 @@ in full before touching code. The section numbers below refer to it.
    payload from `https://api.opendota.com/api/...` and record it as a fixture
    under `tests/fixtures/opendota_api/`, the way item popularity did (§6.3).
    Docstrings describe what the data actually is, not what OpenDota's docs
-   claim (§11 has an example of the two disagreeing).
+   claim (§11 has an example of the two disagreeing). Network access is
+   allowed only in exactly these two forms, as standalone commands:
+
+   ```bash
+   curl -sS https://api.opendota.com/api/heroes/1/matchups -o tests/fixtures/opendota_api/<name>.json
+   curl -sS https://raw.githubusercontent.com/odota/core/master/svc/util/queries.ts
+   ```
+
+   Any other spelling (`curl -s`, a flag before `-sS`, another host) is
+   denied. If you still cannot get the data, stop and say so on the issue;
+   never hand-write a fixture or describe behavior you have not read.
 3. **Copy the nearest pattern by hand.** A new per-hero endpoint copies §6.3:
    client method owning fetch, per-key cache and lock, assembler method that
    never fetches, frozen model, one-line delegating method on `Hero`. Do not

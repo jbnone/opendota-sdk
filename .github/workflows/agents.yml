@@ -32,6 +32,12 @@ jobs:
       (github.event.label.name == 'approved' || github.event.label.name == 'design-approved')
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      # Strips credentials, including the subscription token, from every
+      # subprocess Claude starts; GitHub tokens are kept so `gh` still works.
+      # `uv run` already lets the agent execute code with network access, so
+      # this scrub, not the tool allowlist, is what protects the token.
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
     # One implementation at a time: a burst of labels queues instead of fanning out.
     concurrency:
       group: agents-implement
@@ -66,9 +72,6 @@ jobs:
           # Tag mode on the labeled issue: a tracking comment, the full issue
           # context, and a `claude/` branch for the work.
           track_progress: true
-          # TEMPORARY DIAGNOSTIC: the action strips the API error text from its
-          # log unless this is on. Remove once the first run succeeds.
-          show_full_output: true
           # Only the owner's comments reach the model; the issue body is
           # already vetted by the owner's label.
           include_comments_by_actor: jbnone
@@ -81,7 +84,7 @@ jobs:
             done; do not stop at a link to a pre-filled PR page.
           claude_args: |
             --max-turns 80
-            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(uv run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(gh issue view:*),Bash(gh pr create:*)"
+            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(uv run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(gh issue view:*),Bash(gh pr create:*),Bash(curl -sS https://api.opendota.com/api/:*),Bash(curl -sS https://raw.githubusercontent.com/odota/:*)"
 
   review:
     if: >-
@@ -90,6 +93,8 @@ jobs:
       github.event.pull_request.user.login != 'renovate[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"  # same reason as `implement`
     # A new push to the same PR supersedes the review in flight.
     concurrency:
       group: agents-review-${{ github.event.pull_request.number }}
