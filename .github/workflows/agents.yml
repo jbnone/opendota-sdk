@@ -63,6 +63,9 @@ jobs:
           # Tag mode on the labeled issue: a tracking comment, the full issue
           # context, and a `claude/` branch for the work.
           track_progress: true
+          # TEMPORARY DIAGNOSTIC: the action strips the API error text from its
+          # log unless this is on. Remove once the first run succeeds.
+          show_full_output: true
           # Only the owner's comments reach the model; the issue body is
           # already vetted by the owner's label.
           include_comments_by_actor: jbnone
