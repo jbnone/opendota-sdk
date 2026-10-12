@@ -758,9 +758,11 @@ When editing this project, do not introduce instruction drift in these areas:
 - do not re-enable the `setup-uv` cache in the workflows; zizmor's cache-poisoning audit
   rejects it because these workflows publish what they build
 - do not loosen the gates in `agents.yml` (§15): no `allowed_non_write_users`, no
-  `allowed_bots: '*'`, no `pull_request_target`, no job that writes to the repo without the
-  `agent-build` environment, and no `if:` that drops the owner `sender.login` check. Each one
-  lets someone other than the owner spend the API budget or start an implementation
+  `allowed_bots: '*'`, no `pull_request_target`, and no `if:` that drops the owner
+  `sender.login` check. Each one lets someone other than the owner spend the API budget or
+  start an implementation. Do not re-add an `environment:` with required reviewers to
+  `implement` either: the owner chose the `approved` label as the single start approval,
+  and a second click was tried and rejected as friction (§15)
 - do not put the Claude app on the `protect-main` ruleset's bypass list, and do not add
   `.claude/agents/` roles that hold their own copy of the rules — the role files point at
   this file so there is exactly one rubric to drift from
@@ -907,9 +909,13 @@ from what those runs got wrong.
    labels from anyone else never start a run. Fork PRs receive no secrets. The `review`
    job allows exactly two bot logins, the Claude app's, because PRs the developer opens
    arrive with that actor.
-2. `implement` checks `sender.login` is the owner and the label is one of the two, then
-   runs under the `agent-build` environment, whose required reviewer is the owner. A run
-   cannot start without the owner's Approve click, whatever added the label.
+2. `implement` checks `sender.login` is the owner and the label is one of the two. The
+   label is the whole start approval: adding it starts the build immediately. An earlier
+   version also parked the job on an `agent-build` environment with the owner as required
+   reviewer, so every run needed a second Approve click in the Actions UI; the owner
+   dropped that as friction with no security gain, since only the owner can add the label
+   in the first place. The environment still exists in the repo settings but nothing
+   references it.
 3. The `protect-main` ruleset requires a PR, green CI, and an owner review. Its bypass
    list holds two entries, both in pull-request mode: Renovate, so dependency automerge
    works, and the Repository admin role, because GitHub never lets a PR's author approve

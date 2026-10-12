@@ -2,8 +2,8 @@
 #
 # Two gates stand between an idea and shipped code, and both belong to the
 # repository owner:
-#   1. `implement` fires only when the owner adds `approved`/`design-approved`,
-#      and the `agent-build` environment then waits for the owner's Approve click.
+#   1. `implement` fires only when the owner adds `approved`/`design-approved`
+#      to an issue. That label is the one and only approval to start building.
 #   2. The `protect-main` ruleset requires a pull request, green CI, and an owner
 #      review before anything merges, with no bypass for the Claude app.
 #
@@ -31,7 +31,6 @@ jobs:
       github.event.sender.login == 'jbnone' &&
       (github.event.label.name == 'approved' || github.event.label.name == 'design-approved')
     runs-on: ubuntu-latest
-    environment: agent-build
     timeout-minutes: 45
     # One implementation at a time: a burst of labels queues instead of fanning out.
     concurrency:
