@@ -757,6 +757,13 @@ When editing this project, do not introduce instruction drift in these areas:
   produced versions that outrank every real release (§14)
 - do not re-enable the `setup-uv` cache in the workflows; zizmor's cache-poisoning audit
   rejects it because these workflows publish what they build
+- do not loosen the gates in `agents.yml` (§15): no `allowed_non_write_users`, no
+  `allowed_bots: '*'`, no `pull_request_target`, no job that writes to the repo without the
+  `agent-build` environment, and no `if:` that drops the owner `sender.login` check. Each one
+  lets someone other than the owner spend the API budget or start an implementation
+- do not put the Claude app on the `protect-main` ruleset's bypass list, and do not add
+  `.claude/agents/` roles that hold their own copy of the rules — the role files point at
+  this file so there is exactly one rubric to drift from
 
 If the implementation changes materially, update this file in the same work.
 
@@ -776,6 +783,9 @@ If the implementation changes materially, update this file in the same work.
    `async with` quickstart is the next thing worth adding.
 7. Docs site: scaffolded, see §13. Keep the Google-style docstrings on the public API
    (§10.4) accurate — they're the site's actual content, not just source-level docs.
+8. Agent workflow (§15): the `implement` and `review` jobs exist; run the §12.5 endpoints
+   through them one at a time and fold what the runs get wrong back into §11 and the role
+   files before adding the scheduled groomer and the on-demand architect.
 
 ---
 
@@ -864,7 +874,63 @@ What `ci.yml` does per trigger:
 
 ---
 
-## 15. References
+## 15. Agent Workflow
+
+Feature work can be delegated to Claude Code running in GitHub Actions
+(`.github/workflows/agents.yml`, the Claude Code Action pinned by SHA). This file is the
+constitution for every role; the role prompts under `.claude/agents/` are thin and point at
+sections here rather than restating them. They also register as Claude Code subagents for
+local use.
+
+**Current:**
+
+- `implement` — the `developer` role. Fires when the repository owner adds `approved` or
+  `design-approved` to an issue. It posts a plan comment, implements on a `claude/` branch
+  copying the nearest existing pattern, runs the §9.3 commands, updates this file per §10.5,
+  and opens the PR itself with a Conventional Commits title. It never touches the version,
+  the workflows, or `.claude/`.
+- `review` — the `reviewer` role. Fires on every PR whose head is in this repository, except
+  Renovate's. It checks the diff against §11, §5/§6, §10.6, §9.2, §10.4, and §10.5 in that
+  order, runs the validation commands, and reports inline findings tagged blocking/nit. It
+  edits nothing and cannot approve.
+
+**Planned, not built:** a weekly `groom` job (the `product` role: at most three `proposal`
+issues per run, each one endpoint or one user-facing gap, with the raw payload verified
+live) and an on-demand `design` job (the `architect` role, on `needs-design`, posting
+options and a recommendation; the owner then labels `design-approved`). Both wait until
+the two current jobs have run the §12.5 endpoints and the role files have been corrected
+from what those runs got wrong.
+
+**Gates, and why each exists.** Only the owner can start or ship an implementation:
+
+1. The action refuses to run for actors without write access, so issues, comments, and
+   labels from anyone else never start a run. Fork PRs receive no secrets. The `review`
+   job allows exactly two bot logins, the Claude app's, because PRs the developer opens
+   arrive with that actor.
+2. `implement` checks `sender.login` is the owner and the label is one of the two, then
+   runs under the `agent-build` environment, whose required reviewer is the owner. A run
+   cannot start without the owner's Approve click, whatever added the label.
+3. The `protect-main` ruleset requires a PR, green CI, and an owner review. Its bypass
+   list holds two entries, both in pull-request mode: Renovate, so dependency automerge
+   works, and the Repository admin role, because GitHub never lets a PR's author approve
+   it and the owner is the only code owner — without that entry the owner's own PRs could
+   never merge. The Claude app is on neither list, so it can push `claude/*` branches but
+   never merge. On agent PRs the owner still approves rather than bypassing, so the
+   review is recorded.
+4. Spend is bounded three ways: one `implement` at a time (`concurrency`), `--max-turns`
+   and `timeout-minutes` per job, and the API key living in its own Console workspace with
+   a monthly limit. Only the owner's comments reach the model (`include_comments_by_actor`).
+
+Labels: `proposal` (groomer output, nothing runs), `needs-design` (architect, planned),
+`design-approved` and `approved` (implement). The action restores `.claude/` and `CLAUDE.md`
+from the base branch when it runs on a PR, so a PR cannot rewrite a role file. `AGENTS.md`
+is **not** on that restored list: a PR can edit the rubric the reviewer reads. That is
+acceptable only because the reviewer's tools are read-only and the owner still reviews
+the `AGENTS.md` diff itself before merging; do not give the `review` job write tools.
+
+---
+
+## 16. References
 
 - [OpenDota API Docs](https://docs.opendota.com/)
 - [dotaconstants Repository](https://github.com/odota/dotaconstants)
