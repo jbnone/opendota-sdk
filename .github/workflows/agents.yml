@@ -59,7 +59,10 @@ jobs:
       - name: Run the developer agent
         uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Subscription auth: a long-lived token from `claude setup-token`, so
+          # runs draw on the owner's Claude plan. An API key bills the Console
+          # organization's prepaid credit instead, which is a separate account.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Tag mode on the labeled issue: a tracking comment, the full issue
           # context, and a `claude/` branch for the work.
           track_progress: true
@@ -113,7 +116,7 @@ jobs:
       - name: Run the reviewer agent
         uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           track_progress: true
           include_comments_by_actor: jbnone
           # PRs opened by the developer agent arrive with the Claude app as the

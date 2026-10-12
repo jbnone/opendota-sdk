@@ -924,8 +924,13 @@ from what those runs got wrong.
    never merge. On agent PRs the owner still approves rather than bypassing, so the
    review is recorded.
 4. Spend is bounded three ways: one `implement` at a time (`concurrency`), `--max-turns`
-   and `timeout-minutes` per job, and the API key living in its own Console workspace with
-   a monthly limit. Only the owner's comments reach the model (`include_comments_by_actor`).
+   and `timeout-minutes` per job, and the runs drawing on the owner's Claude subscription
+   through a `claude setup-token` OAuth token (`CLAUDE_CODE_OAUTH_TOKEN`), whose plan limits
+   are the ceiling. An API key was tried first and every run was rejected with "Credit
+   balance is too low": a key bills the Console organization's prepaid credit, which is a
+   separate account from the subscription, so do not switch back to `anthropic_api_key`
+   without funding that organization. Only the owner's comments reach the model
+   (`include_comments_by_actor`).
 
 Labels: `proposal` (groomer output, nothing runs), `needs-design` (architect, planned),
 `design-approved` and `approved` (implement). The action restores `.claude/` and `CLAUDE.md`
