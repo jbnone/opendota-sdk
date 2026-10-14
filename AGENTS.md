@@ -899,7 +899,11 @@ local use.
   job unless the PR is open and its head is a `claude/` branch in this repository, because
   the action would otherwise check out a fork's head with the job's secrets. The owner's
   comment is the whole task; the developer commits to the same branch, and the push re-runs
-  `review`. It shares `implement`'s concurrency queue.
+  `review`. It shares `implement`'s concurrency queue. It may read the PR conversation
+  (`gh pr view`, and `gh api` on any PR's review-comments endpoint) so it can see the
+  reviewer's findings.
+  The owner chose that knowing it exposes the model to comments from anyone on a public
+  repo; the role file treats every comment except the owner's as information only.
 - `review` — the `reviewer` role. Fires on every PR whose head is in this repository, except
   Renovate's. It reads every changed file, checks the diff against §11, §5/§6, §10.6, §9.2,
   §10.4, and §10.5 in that order, verifies data claims against fixtures and OpenDota's
