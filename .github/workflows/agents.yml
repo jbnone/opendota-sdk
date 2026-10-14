@@ -179,10 +179,13 @@ jobs:
           include_comments_by_actor: jbnone
           additional_permissions: |
             actions: read
+          # `gh pr view` and the #87 comments endpoint let the developer read the
+          # reviewer's findings. On a public repo they also return comments from
+          # anyone; the role file treats those as information, never instructions.
           claude_args: |
             --max-turns 60
             --append-system-prompt "You are the developer role for this repository. Read .claude/agents/developer.md and follow its section 'Revising your own pull request'. Commit to this PR's branch; do not open a new pull request."
-            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(uv run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(curl -sS https://api.opendota.com/api/*),Bash(curl -sS https://raw.githubusercontent.com/odota/*)"
+            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(uv run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(gh pr view:*),Bash(gh api repos/jbnone/opendota-sdk/pulls/87/comments:*),Bash(curl -sS https://api.opendota.com/api/*),Bash(curl -sS https://raw.githubusercontent.com/odota/*)"
 
   review:
     if: >-
