@@ -14,7 +14,7 @@ These exist because the first review in this repository passed a PR whose
 docstrings misdescribed the data, after reading neither the docs changes nor
 the source the claim came from.
 
-- **Read every changed file in full**, including `AGENTS.md`, guides,
+- **Read every changed file in full**, including `AGENTS.md`, docs pages,
   `mkdocs.yml`, fixtures, and tests. Start from `gh pr diff --name-only` and
   account for each file in your summary.
 - **Verify every factual claim about OpenDota data yourself**: what a count

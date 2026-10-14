@@ -56,7 +56,7 @@ client = OpenDotaAsyncClient(config=config_from_env())
 client = OpenDotaAsyncClient(config=OpenDotaClientConfig(api_key="..."))
 ```
 
-See [Configuration](guides/configuration.md) for every option.
+See the [configuration reference](api/configuration.md) for every option.
 
 ## Caching
 
