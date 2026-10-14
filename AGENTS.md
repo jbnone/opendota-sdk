@@ -763,6 +763,9 @@ When editing this project, do not introduce instruction drift in these areas:
   start an implementation. Do not re-add an `environment:` with required reviewers to
   `implement` either: the owner chose the `approved` label as the single start approval,
   and a second click was tried and rejected as friction (§15)
+- do not remove `revise`'s guard step or widen its `if:` beyond the owner's `@claude`
+  comment. The action checks out the PR head itself, forks included, so without the guard
+  an owner comment on a fork PR would run that fork's code with the job's secrets (§15)
 - do not put the Claude app on the `protect-main` ruleset's bypass list, and do not add
   `.claude/agents/` roles that hold their own copy of the rules — the role files point at
   this file so there is exactly one rubric to drift from
@@ -891,10 +894,20 @@ local use.
   copying the nearest existing pattern, runs the §9.3 commands, updates this file per §10.5,
   and opens the PR itself with a Conventional Commits title. It never touches the version,
   the workflows, or `.claude/`.
+- `revise` — the `developer` role again, sent back to its own PR. Fires when the owner
+  comments `@claude` on a PR. A guard step runs before any PR code is fetched and fails the
+  job unless the PR is open and its head is a `claude/` branch in this repository, because
+  the action would otherwise check out a fork's head with the job's secrets. The owner's
+  comment is the whole task; the developer commits to the same branch, and the push re-runs
+  `review`. It shares `implement`'s concurrency queue.
 - `review` — the `reviewer` role. Fires on every PR whose head is in this repository, except
-  Renovate's. It checks the diff against §11, §5/§6, §10.6, §9.2, §10.4, and §10.5 in that
-  order, runs the validation commands, and reports inline findings tagged blocking/nit. It
-  edits nothing and cannot approve.
+  Renovate's. It reads every changed file, checks the diff against §11, §5/§6, §10.6, §9.2,
+  §10.4, and §10.5 in that order, verifies data claims against fixtures and OpenDota's
+  source with the same two `curl` forms the developer has, runs the validation commands,
+  and reports inline findings tagged blocking/nit. It edits nothing and cannot approve.
+  Its first real review (#87) passed in 9 turns after skipping the docs changes and every
+  data claim, and missed docstrings calling pro-league matchups "every match". The role now
+  treats anything unread or unverified as a blocking finding.
 
 **Planned, not built:** a weekly `groom` job (the `product` role: at most three `proposal`
 issues per run, each one endpoint or one user-facing gap, with the raw payload verified
