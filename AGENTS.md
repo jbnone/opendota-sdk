@@ -934,7 +934,10 @@ from what those runs got wrong.
 5. Network access for `implement` is two literal `curl -sS` prefixes, one for
    `api.opendota.com/api/` and one for `raw.githubusercontent.com/odota/`, so the developer
    can record real fixtures and read OpenDota's source (§6.3). The first real run stopped
-   without them rather than invent data, which is the behavior to keep. `WebFetch` stays
+   without them rather than invent data, which is the behavior to keep. The rules end in a
+   bare `*` (`Bash(curl -sS https://api.opendota.com/api/*)`), never `:*`: Claude Code reads
+   `:*` as a space followed by `*`, so `.../api/:*` only matches when a space follows `api/`,
+   which no real URL has. That spelling shipped once and denied every fetch. `WebFetch` stays
    off: the action bans it by default, and it summarizes pages through a small model, so it
    cannot record raw JSON. The tool allowlist is not the real boundary, though:
    `Bash(uv run:*)` already lets the agent run code with network access. What protects the
