@@ -63,7 +63,9 @@ in full before touching code. The section numbers below refer to it.
    - exports in `__init__.py` only for user-facing types (§3.5)
 5. **Update the docs in the same change** (§10.5): the relevant `AGENTS.md`
    sections, including §2.2's coverage list and §12's priorities; the docs
-   site guides under `docs/` if they describe the surface you changed.
+   site's `index.md` or `quickstart.md` if they describe the surface you changed.
+   Never add a guide under `docs/guides/`: the owner removed them (§13), and
+   the docstrings are the documentation.
 6. **Validate before opening the PR.** All four must pass, and you fix what
    they report rather than suppressing it:
 
