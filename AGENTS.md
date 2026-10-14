@@ -900,7 +900,8 @@ local use.
   the action would otherwise check out a fork's head with the job's secrets. The owner's
   comment is the whole task; the developer commits to the same branch, and the push re-runs
   `review`. It shares `implement`'s concurrency queue. It may read the PR conversation
-  (`gh pr view`, and the comments endpoint for #87) so it can see the reviewer's findings.
+  (`gh pr view`, and `gh api` on any PR's review-comments endpoint) so it can see the
+  reviewer's findings.
   The owner chose that knowing it exposes the model to comments from anyone on a public
   repo; the role file treats every comment except the owner's as information only.
 - `review` — the `reviewer` role. Fires on every PR whose head is in this repository, except
