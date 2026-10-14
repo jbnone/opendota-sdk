@@ -940,6 +940,10 @@ from what those runs got wrong.
    `Bash(uv run:*)` already lets the agent run code with network access. What protects the
    subscription token is `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` on both jobs, which strips
    credentials from every subprocess while leaving GitHub tokens for `gh`. Do not remove it.
+   The scrub needs `bubblewrap`, and Claude Code refuses to start without it. The action
+   installs it only when `allowed_non_write_users` is set, which this workflow never sets,
+   so each job has its own "Install subprocess isolation dependencies" step copied from the
+   action. The first run with the scrub on failed at startup for exactly this reason.
 
 Labels: `proposal` (groomer output, nothing runs), `needs-design` (architect, planned),
 `design-approved` and `approved` (implement). The action restores `.claude/` and `CLAUDE.md`

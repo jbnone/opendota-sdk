@@ -62,6 +62,23 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --all-groups
 
+      # CLAUDE_CODE_SUBPROCESS_ENV_SCRUB needs bubblewrap, and Claude Code refuses
+      # to start without it. The action installs it only when
+      # `allowed_non_write_users` is set, which this workflow never sets, so this
+      # step mirrors the action's own "Install subprocess isolation dependencies".
+      - name: Install subprocess isolation dependencies
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends bubblewrap socat && break
+            echo "apt-get attempt $i failed, retrying..."
+            sleep 5
+          done
+          command -v bwrap
+          # Ubuntu 24.04+ restricts unprivileged user namespaces via AppArmor.
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
       - name: Run the developer agent
         uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
         with:
@@ -117,6 +134,23 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --locked --all-groups
+
+      # CLAUDE_CODE_SUBPROCESS_ENV_SCRUB needs bubblewrap, and Claude Code refuses
+      # to start without it. The action installs it only when
+      # `allowed_non_write_users` is set, which this workflow never sets, so this
+      # step mirrors the action's own "Install subprocess isolation dependencies".
+      - name: Install subprocess isolation dependencies
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends bubblewrap socat && break
+            echo "apt-get attempt $i failed, retrying..."
+            sleep 5
+          done
+          command -v bwrap
+          # Ubuntu 24.04+ restricts unprivileged user namespaces via AppArmor.
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
 
       - name: Run the reviewer agent
         uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
