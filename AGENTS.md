@@ -399,7 +399,7 @@ not assumed):
   `svc/util/insert.ts` stores a match in `matches` only when its `leagueid` is a `premium` or
   `professional` league (and, for api-type inserts, `isProMatch`). Public matches are not in the
   table, consistent with the fixture's small counts (Anti-Mage's top opponent has 92 games over a
-  year). The docs do not say this; the docstrings and guide do.
+  year). The docs do not say this; the docstrings do.
 - an **unknown hero id is HTTP 200 with `[]`**, so it is not an error; `HeroMatchups.is_empty` is
   how callers tell.
 
