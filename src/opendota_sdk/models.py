@@ -362,11 +362,13 @@ class HeroMatchup:
 class HeroMatchups:
     """A hero's results against every opposing hero, from `/heroes/{hero_id}/matchups`.
 
-    OpenDota counts every match in its database -- parsed or not -- that started within
-    the last year, pairing the hero with each of the five heroes on the other team. One
-    match therefore adds one game to each of five matchups. `wins` counts the matches the
-    queried hero's team won. OpenDota's docs do not say which matches are sampled; this
-    is what its query does.
+    The query reads OpenDota's Postgres `matches` table, which only receives matches from
+    premium and professional-tier leagues, and counts those that started within the last
+    year. Public matches are not in it, so these are pro-league results, not ladder
+    results. Each match is paired with each of the five heroes on the other team, so one
+    match adds one game to each of five matchups. `wins` counts the matches the queried
+    hero's team won. OpenDota's docs do not say which matches are sampled; this is what
+    its source does.
 
     Sorted most games first, ties by the opposing hero's localized name.
 

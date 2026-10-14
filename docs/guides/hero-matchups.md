@@ -31,9 +31,11 @@ hero first. If you have a name, call `get_hero(hero_name=...)` and then `get_mat
 
 ## What the numbers mean
 
-OpenDota counts every match in its database that started within the **last year** —
-parsed or not — and pairs the hero with each of the five heroes on the other team. One
-match therefore adds one game to each of five matchups.
+The data is **professional-league matches only**. OpenDota's matchups query reads its
+Postgres `matches` table, which only receives matches from premium and professional-tier
+leagues; public matches are never stored there. The query counts those that started
+within the **last year** and pairs the hero with each of the five heroes on the other
+team. One match therefore adds one game to each of five matchups.
 
 Each [`HeroMatchup`][opendota_sdk.HeroMatchup] has the opposing `hero`, `games_played`
 against it, and `wins` — the matches the queried hero's team won. `win_rate` is

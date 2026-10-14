@@ -392,10 +392,14 @@ Shape and decisions:
 opposing hero (126 today). Verified live and in OpenDota's source (the route in `svc/api/spec.ts`,
 not assumed):
 
-- the query counts **every match in the database that started in the last year**, parsed or not,
-  pairing the hero with each of the five heroes on the other team, so one match adds one game to
-  each of five matchups. `wins` is matches the *queried* hero's team won. The docs do not say this;
-  the docstrings and guide do.
+- the query counts **premium/professional-league matches that started in the last year**, pairing
+  the hero with each of the five heroes on the other team, so one match adds one game to each of
+  five matchups. `wins` is matches the *queried* hero's team won. The `WHERE` clause in `spec.ts`
+  only gives the window; the population comes from the writer: `upsertMatchPostgres` in
+  `svc/util/insert.ts` stores a match in `matches` only when its `leagueid` is a `premium` or
+  `professional` league (and, for api-type inserts, `isProMatch`). Public matches are not in the
+  table, consistent with the fixture's small counts (Anti-Mage's top opponent has 92 games over a
+  year). The docs do not say this; the docstrings and guide do.
 - an **unknown hero id is HTTP 200 with `[]`**, so it is not an error; `HeroMatchups.is_empty` is
   how callers tell.
 
@@ -773,6 +777,8 @@ When editing this project, do not introduce instruction drift in these areas:
   "fetches once" test (§6.3)
 - do not describe item popularity as professional-match data. OpenDota's docs say so, but its
   query samples the hero's last 100 parsed matches of any kind (§6.3)
+- do not describe hero matchups as all-match or public-match data. The query reads the `matches`
+  table, which only holds premium/professional-league matches (§6.4)
 - do not reduce rate-limit handling to "honor `Retry-After`". OpenDota never sends that
   header; the minute-window wait in `_rate_limit_details()` is what actually fires (§8.2)
 - do not make the rate-limit cooldown per-request, or hold the concurrency slot across
