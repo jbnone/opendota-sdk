@@ -22,6 +22,8 @@ from opendota_sdk.models import (
     HeroAbility,
     HeroBracketStats,
     HeroItemPopularity,
+    HeroMatchup,
+    HeroMatchups,
     HeroStats,
     HeroTalent,
     Item,
@@ -329,6 +331,81 @@ class Assembler:
             )
 
         return HeroItemPopularity(hero_id=hero_id, raw=dict(raw), **phases)
+
+    def normalize_hero_matchups(
+        self,
+        raw: Any,
+        *,
+        hero_id: int,
+        heroes_by_id: Mapping[int, Hero],
+    ) -> HeroMatchups:
+        """Build a HeroMatchups model, resolving each opposing hero id to its `Hero`.
+
+        Entries are sorted most games first, ties broken by the opposing hero's localized
+        name, so the order is stable. Opposing hero ids with no match in `heroes_by_id`
+        -- possible if OpenDota's data runs ahead of the hero constants mid-patch -- are
+        left out of the list, kept on `raw`, and reported in one warning per payload.
+
+        Args:
+            raw: The `/heroes/{hero_id}/matchups` payload.
+            hero_id: The hero the payload was fetched for; the payload does not repeat it.
+            heroes_by_id: Every known hero, keyed by numeric id.
+
+        Returns:
+            The assembled matchups.
+
+        Raises:
+            OpenDotaError: If the payload is not a JSON list of objects, or an entry has
+                no usable `hero_id`, `games_played`, or `wins`.
+        """
+        if not isinstance(raw, list):
+            raise OpenDotaError(
+                f"Cannot build HeroMatchups for hero {hero_id}: expected a list, "
+                f"got {type(raw).__name__}"
+            )
+
+        matchups: list[HeroMatchup] = []
+        unresolved: set[int] = set()
+        for entry in raw:
+            if not isinstance(entry, dict):
+                raise OpenDotaError(
+                    f"Cannot build HeroMatchups for hero {hero_id}: entry is "
+                    f"{type(entry).__name__}, expected an object"
+                )
+            counts: dict[str, int] = {}
+            for key in ("hero_id", "games_played", "wins"):
+                value = self._normalize_int(entry.get(key))
+                if value is None:
+                    raise OpenDotaError(
+                        f"Cannot build HeroMatchups for hero {hero_id}: entry has no "
+                        f"usable {key!r}: {entry!r}"
+                    )
+                counts[key] = value
+            opponent = heroes_by_id.get(counts["hero_id"])
+            if opponent is None:
+                unresolved.add(counts["hero_id"])
+                continue
+            matchups.append(
+                HeroMatchup(
+                    hero=opponent,
+                    games_played=counts["games_played"],
+                    wins=counts["wins"],
+                )
+            )
+        matchups.sort(key=lambda m: (-m.games_played, m.hero.localized_name))
+
+        if unresolved:
+            logger.warning(
+                "Matchups for hero %d reference %d hero id(s) missing from the hero "
+                "constants (%s); leaving them out",
+                hero_id,
+                len(unresolved),
+                ", ".join(str(i) for i in sorted(unresolved)),
+            )
+
+        return HeroMatchups(
+            hero_id=hero_id, matchups=matchups, raw=[dict(e) for e in raw]
+        )
 
     def _normalize_brackets(self, raw: dict[str, Any]) -> list[HeroBracketStats]:
         """Fold the flat `{bracket}_pick`/`{bracket}_win` keys into typed entries."""

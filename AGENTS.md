@@ -54,9 +54,11 @@ Implemented today:
 - hero statistics flow via `get_hero_stats()`/`get_hero_stat()` returning typed `HeroStats` models
 - hero item popularity via `get_hero_item_popularity()` returning `HeroItemPopularity`, with every
   item id resolved to an `Item` — the first cross-domain join, and the first per-key endpoint (§6.3)
-- two relationship methods, `Hero.get_stats()` and `Hero.get_item_popularity()`, resolved through an
-  ambient client (§6.2)
-- typed `Item`, `Hero`, `HeroStats`, and `HeroItemPopularity` models
+- hero matchups via `get_hero_matchups()` returning `HeroMatchups`, with every opposing hero id
+  resolved to a `Hero` — the second cross-domain join and the second per-key endpoint (§6.4)
+- three relationship methods, `Hero.get_stats()`, `Hero.get_item_popularity()`, and
+  `Hero.get_matchups()`, resolved through an ambient client (§6.2)
+- typed `Item`, `Hero`, `HeroStats`, `HeroItemPopularity`, and `HeroMatchups` models
 - internal transport, auth, retry, and error layers, including a per-client concurrency cap and
   rate-limit handling that waits out OpenDota's per-minute window (§8.2)
 - standard-library logging under the `opendota_sdk` logger: per-attempt and cache-fill detail at
@@ -146,6 +148,8 @@ Current examples:
 - `OpenDotaAsyncClient.get_hero_item_popularity()` turns `/heroes/{id}/itemPopularity`'s bare item ids
   into full `Item` objects, joining two domains so the caller never cross-references
   `/constants/items` by hand
+- `OpenDotaAsyncClient.get_hero_matchups()` turns `/heroes/{id}/matchups`'s bare opposing hero ids
+  into full `Hero` objects, joining the matchups payload with the hero constants
 
 ### 3.4 Incremental Generalization
 
@@ -167,8 +171,8 @@ Public exports should be limited to stable, user-facing types such as:
 - `OpenDotaAsyncClient`
 - `OpenDotaClientConfig`
 - SDK error types
-- selected user-facing models like `Item`, `Hero`, `HeroStats`, and `HeroItemPopularity` (with its
-  `PopularItem` entries), plus the enums they expose
+- selected user-facing models like `Item`, `Hero`, `HeroStats`, `HeroItemPopularity` (with its
+  `PopularItem` entries), and `HeroMatchups` (with its `HeroMatchup` entries), plus the enums they expose
   (`HeroSkillBracket` is exported because `HeroBracketStats.bracket` hands it to callers)
 
 The ambient-client helpers in `_context.py` are **not** exported: `active_client()`, `bind_client()`,
@@ -191,7 +195,7 @@ src/opendota_sdk/
 ├── assembler.py         # Item, hero, hero-stats, and item-popularity normalization
 ├── client.py            # OpenDotaAsyncClient (owns all raw fetching and caching)
 ├── enums.py             # Hero-related enums and shared enum types
-├── models.py            # Typed Item, Hero, HeroStats, HeroItemPopularity models, item enums
+├── models.py            # Typed Item, Hero, HeroStats, HeroItemPopularity, HeroMatchups models, item enums
 ├── py.typed             # PEP 561 marker; the package ships as typed
 └── http/
     ├── _auth.py         # API key as `Authorization: Bearer`, the only header OpenDota reads
@@ -382,6 +386,39 @@ Shape and decisions:
   `tests/fixtures/opendota_api/` are resolved against `tests/fixtures/items.json` in
   `test_item_popularity_fixture.py`.
 
+### 6.4 Hero Matchups
+
+`/heroes/{hero_id}/matchups` returns a JSON **list**, one `{hero_id, games_played, wins}` entry per
+opposing hero (126 today). Verified live and in OpenDota's source (the route in `svc/api/spec.ts`,
+not assumed):
+
+- the query counts **every match in the database that started in the last year**, parsed or not,
+  pairing the hero with each of the five heroes on the other team, so one match adds one game to
+  each of five matchups. `wins` is matches the *queried* hero's team won. The docs do not say this;
+  the docstrings and guide do.
+- an **unknown hero id is HTTP 200 with `[]`**, so it is not an error; `HeroMatchups.is_empty` is
+  how callers tell.
+
+Shape and decisions, copied by hand from §6.3 (§7):
+
+- `HeroMatchup(hero, games_played, wins)` with `win_rate` (`None` when no games) and
+  `HeroMatchups(hero_id, matchups, raw)` with `is_empty`; sorted most games first, ties by the
+  opposing hero's localized name. Both frozen; `HeroMatchup.hero` is annotated `"Hero"` because
+  `Hero` is defined after it and itself returns `HeroMatchups`.
+- **client-unaware join:** the client fetches the payload and `get_heroes()` concurrently, then
+  passes `heroes_by_id` into `Assembler.normalize_hero_matchups()`. Opposing ids missing from the hero
+  constants are dropped with **one WARNING per payload** and survive only in `raw`. A missing or
+  non-integer `hero_id`/`games_played`/`wins` raises `OpenDotaError` rather than becoming `0`.
+- **id only, no `hero_name`**, and **per-key cache and lock** (`_hero_matchups_cache`/
+  `_hero_matchups_locks`), exactly as §6.3 — pinned by the same peak-concurrency test shape.
+- `Hero.get_matchups()` is a one-line delegation through the ambient client (§6.2).
+- tests: `test_matchups.py` (assembler, client, relationship method, cache-fill log) and
+  `test_matchups_fixture.py`, which resolves the recorded payloads in `tests/fixtures/opendota_api/`
+  against the vendored hero constants.
+
+Two per-key endpoints now exist (§6.3, §6.4) and their keying and lock lifecycle are identical, but
+they are still two hand-written copies; see §7 for whether to extract.
+
 ---
 
 ## 7. Future Architecture Direction
@@ -394,19 +431,22 @@ If future work introduces:
 - `PlayerService`
 - `MatchService`
 - `HeroService`
-- further domain objects that own async relationship methods, beyond the two on `Hero` (§6.2, §6.3)
+- further domain objects that own async relationship methods, beyond the three on `Hero` (§6.2–§6.4)
 
 then that work should be introduced deliberately, with tests and updated docs, rather than implied by the instructions file alone.
 
 `Hero.get_stats()` was introduced exactly that way and is the template to copy: declare the client
 method that owns the fetch, then add a one-line delegating async method on the model.
-`Hero.get_item_popularity()` was the second, written the same hand-rolled way; a third should be too.
+`Hero.get_item_popularity()` and `Hero.get_matchups()` followed, written the same hand-rolled way; a
+fourth should be too.
 
-The per-key trigger has now fired **once**: item popularity needed per-key single-flight, and §6.3
-records the shape it took. That is still not grounds for a shared abstraction. Two delegating
-one-liners are not duplication worth factoring out, and one per-key cache is a single data point.
-The next per-key endpoint (matchups, durations, benchmarks) should copy §6.3 by hand; only if the
-keying, lock lifecycle, and invalidation needs then visibly match is a helper worth extracting.
+The per-key trigger has now fired **twice**: item popularity (§6.3) and matchups (§6.4) each needed
+per-key single-flight, with identical keying (hero id) and lock lifecycle (never evicted, no
+invalidation). Both endpoints joined a second domain, so the shared part is only the
+get-or-create-lock-then-fill skeleton. That decision is the owner's, not something to fold into an
+endpoint PR: do not extract it as part of adding `/durations`, `/players`, or `/benchmarks`. If one
+of those needs different keying (e.g. `/benchmarks` with bracket/role) or invalidation, that is
+evidence against a helper; if it matches again, propose the extraction as its own issue.
 
 Until then:
 
@@ -541,6 +581,9 @@ Existing coverage includes:
 - hero item popularity: assembler resolution/sorting/unresolved-id handling (`test_assembler.py`),
   a regression sweep over recorded real payloads (`test_item_popularity_fixture.py`), and
   client-level per-hero caching and parallelism (`test_client.py`)
+- hero matchups: assembler resolution/sorting/unresolved-id warning, client per-hero caching,
+  single-flight and parallelism, `Hero.get_matchups()`, and the cache-fill log (`test_matchups.py`),
+  plus a regression sweep over recorded real payloads (`test_matchups_fixture.py`)
 - ambient client binding and `Hero.get_stats()` (`test_context.py`), including nesting, the
   unbound-client error, and the gather-collapses-to-one-request property
 - async client behavior
@@ -605,7 +648,7 @@ Ask:
 - keep value-like models predictable
 - if a model is meant to represent static game data, consider immutability deliberately, but do not change mutability casually without checking current usage
 - `Item`, `Hero`, `ItemAbility`, `HeroAbility`, `HeroTalent`, `HeroStats`, `HeroBracketStats`,
-  `HeroItemPopularity`, `PopularItem`, and `Attribute` are all `frozen=True` — a
+  `HeroItemPopularity`, `PopularItem`, `HeroMatchups`, `HeroMatchup`, and `Attribute` are all `frozen=True` — a
   deliberate decision (nothing in the codebase mutated a constructed instance, verified before freezing).
   Note this only blocks reassigning a field; it does not make nested `list`/`dict` fields (e.g. `raw`,
   `abilities`) immutable, and `hash()` on these models will raise since they hold unhashable list fields.
@@ -777,9 +820,9 @@ If the implementation changes materially, update this file in the same work.
 2. Continue polishing the item domain slice as the reference architecture.
 3. Improve the hero flow without prematurely forcing a generalized service layer.
 4. Introduce new domain entities only when their owning fetch, enrichment, and model path is clear.
-5. `/itemPopularity` is done (§6.3). Add the remaining hero-scoped endpoints (`/heroes/{id}/matchups`,
-   `/durations`, `/players`, and `/benchmarks`) one at a time, hand-rolled per §7; the next one decides
-   whether §6.3's per-key caching is worth extracting.
+5. `/itemPopularity` (§6.3) and `/matchups` (§6.4) are done. Add the remaining hero-scoped endpoints
+   (`/durations`, `/players`, and `/benchmarks`) one at a time, hand-rolled per §7; whether to
+   extract the per-key caching is a separate decision (§7).
 6. `README.md` has badges, a one-line description, the install line, and a link out to
    the docs site. It is also the PyPI landing page (`readme = "README.md"`), so the
    `async with` quickstart is the next thing worth adding.

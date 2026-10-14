@@ -12,7 +12,13 @@ from opendota_sdk.assembler import Assembler
 from opendota_sdk.http._auth import AuthHandler
 from opendota_sdk.http._retry import RetryPolicy
 from opendota_sdk.http._transport import AsyncHTTPTransport
-from opendota_sdk.models import Hero, HeroItemPopularity, HeroStats, Item
+from opendota_sdk.models import (
+    Hero,
+    HeroItemPopularity,
+    HeroMatchups,
+    HeroStats,
+    Item,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +112,8 @@ class OpenDotaAsyncClient:
         # fetch in parallel instead of queueing behind one shared lock.
         self._hero_item_popularity_cache: dict[int, HeroItemPopularity] = {}
         self._hero_item_popularity_locks: dict[int, asyncio.Lock] = {}
+        self._hero_matchups_cache: dict[int, HeroMatchups] = {}
+        self._hero_matchups_locks: dict[int, asyncio.Lock] = {}
 
     async def _get(
         self,
@@ -363,6 +371,58 @@ class OpenDotaAsyncClient:
                             cached.late_game,
                         )
                     ),
+                    time.perf_counter() - started,
+                )
+
+        return cached
+
+    async def get_hero_matchups(self, *, hero_id: int) -> HeroMatchups:
+        """Fetch a hero's results against every opposing hero, with each one resolved.
+
+        Fetches `/heroes/{hero_id}/matchups` alongside the hero constants (via
+        `get_heroes()`, so those are fetched at most once per client) and turns each
+        opposing hero id into a `Hero`. See `HeroMatchups` for what the counts measure.
+
+        Cached per hero: concurrent calls for the same hero share one request, and calls
+        for different heroes run in parallel. Takes an id only, for the same reason as
+        `get_hero_item_popularity()`. Callers holding a name can use
+        `get_hero(hero_name=...)` and then `Hero.get_matchups()`.
+
+        Args:
+            hero_id: Numeric hero id.
+
+        Returns:
+            The hero's matchups. OpenDota answers an unknown hero id with an empty list
+            rather than an error, so check `HeroMatchups.is_empty`.
+
+        Raises:
+            OpenDotaError: If a request fails or the payload is malformed.
+        """
+        cached = self._hero_matchups_cache.get(hero_id)
+        if cached is not None:
+            return cached
+
+        # Get-or-create with no await in between, so racing tasks share one lock.
+        lock = self._hero_matchups_locks.get(hero_id)
+        if lock is None:
+            lock = self._hero_matchups_locks[hero_id] = asyncio.Lock()
+
+        async with lock:
+            cached = self._hero_matchups_cache.get(hero_id)
+            if cached is None:
+                started = time.perf_counter()
+                raw, _ = await asyncio.gather(
+                    self._get(f"/heroes/{hero_id}/matchups"),
+                    self.get_heroes(),
+                )
+                cached = self._assembler.normalize_hero_matchups(
+                    raw, hero_id=hero_id, heroes_by_id=self._heroes_by_id
+                )
+                self._hero_matchups_cache[hero_id] = cached
+                logger.debug(
+                    "Loaded %d matchups for hero %d in %.2fs; cached on client",
+                    len(cached.matchups),
+                    hero_id,
                     time.perf_counter() - started,
                 )
 
