@@ -333,6 +333,71 @@ class HeroItemPopularity:
 
 
 @dataclass(frozen=True)
+class HeroMatchup:
+    """One hero's record against a single opposing hero.
+
+    Attributes:
+        hero: The opposing hero.
+        games_played: Matches in which the two heroes were on opposite teams.
+        wins: How many of those matches the queried hero's team won.
+    """
+
+    hero: "Hero"
+    games_played: int
+    wins: int
+
+    @property
+    def win_rate(self) -> float | None:
+        """The queried hero's wins as a fraction of games played against `hero`.
+
+        Returns:
+            A value between 0 and 1, or `None` when `games_played` is zero.
+        """
+        if self.games_played == 0:
+            return None
+        return self.wins / self.games_played
+
+
+@dataclass(frozen=True)
+class HeroMatchups:
+    """A hero's results against every opposing hero, from `/heroes/{hero_id}/matchups`.
+
+    The query reads OpenDota's Postgres `matches` table, which only receives matches from
+    premium and professional-tier leagues, and counts those that started within the last
+    year. Public matches are not in it, so these are pro-league results, not ladder
+    results. Each match is paired with each of the five heroes on the other team, so one
+    match adds one game to each of five matchups. `wins` counts the matches the queried
+    hero's team won. OpenDota's docs do not say which matches are sampled; this is what
+    its source does.
+
+    Sorted most games first, ties by the opposing hero's localized name.
+
+    Attributes:
+        hero_id: Numeric hero id the matchups are for, matching `Hero.id`.
+        matchups: One entry per opposing hero that could be resolved to a `Hero`.
+        raw: The original payload. Opposing hero ids with no matching `Hero` are kept
+            here even though they are left out of `matchups`.
+    """
+
+    hero_id: int
+    matchups: list[HeroMatchup] = field(default_factory=list)
+    raw: list[dict[str, Any]] = field(default_factory=list, repr=False, compare=False)
+
+    @property
+    def is_empty(self) -> bool:
+        """Whether OpenDota returned no matchups at all.
+
+        OpenDota answers an unknown hero id the same way as a hero with no recent
+        matches: an empty list and HTTP 200. This is the way to tell that nothing came
+        back.
+
+        Returns:
+            `True` when `matchups` is empty.
+        """
+        return not self.matchups
+
+
+@dataclass(frozen=True)
 class HeroStats:
     """Live aggregate pick/win statistics for a hero, from `/heroStats`.
 
@@ -536,6 +601,23 @@ class Hero:
                 `async with OpenDotaAsyncClient()` and without `client.activate()`.
         """
         return await active_client().get_hero_item_popularity(hero_id=self.id)
+
+    async def get_matchups(self) -> HeroMatchups:
+        """Fetch this hero's results against every opposing hero, via the active client.
+
+        Delegates to `OpenDotaAsyncClient.get_hero_matchups()` on the client bound to the
+        current context. Like `get_item_popularity()`, this is a per-hero endpoint:
+        gathering it over every hero costs one request per hero, and repeat calls for the
+        same hero are served from that client's cache.
+
+        Returns:
+            The hero's matchups, with every opposing hero resolved to a `Hero`.
+
+        Raises:
+            OpenDotaError: If no client is active, i.e. this is called outside
+                `async with OpenDotaAsyncClient()` and without `client.activate()`.
+        """
+        return await active_client().get_hero_matchups(hero_id=self.id)
 
     def as_dict(self) -> dict[str, Any]:
         """Return a copy of the raw merged payload this hero was assembled from.
