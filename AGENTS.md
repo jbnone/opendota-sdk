@@ -352,7 +352,7 @@ source (`getHeroItemPopularity` in `svc/util/queries.ts`), not assumed:
   can exceed 100. Phases are game-clock windows with cost floors: start ≤ 0:00 and ≤ 600 gold;
   early 0–10 min and ≥ 500; mid 10–25 min and ≥ 1,000; late ≥ 25 min and ≥ 2,000. OpenDota's API
   docs call this "professional games", but the query samples **any parsed match** — the docstrings
-  and guide say so, and should not repeat the docs' claim.
+  say so, and should not repeat the docs' claim.
 - an **unknown hero id is HTTP 200 with four empty phases**, indistinguishable from a hero with no
   parsed matches, so it is not an error; `HeroItemPopularity.is_empty` is how callers tell.
 
@@ -448,7 +448,7 @@ contract, and why it is shaped this way:
   un-awaited coroutine, so the retry predicate inspects a coroutine object, never
   matches, and the real exception surfaces outside the retry loop. That bug shipped
   once and made `max_retries`/`backoff_factor`/`retry_on_status` silently inert while
-  `docs/guides/errors.md` promised users automatic retries. Do not swap it back.
+  the errors guide (since removed, §13) promised users automatic retries. Do not swap it back.
 - retries are decided **from the raised exception**, not from a returned response.
   `handle_response()` raises on any non-2xx status *inside* the retried callable, so a
   retryable status never comes back as a result — a `retry_if_result` predicate is
@@ -745,6 +745,8 @@ When editing this project, do not introduce instruction drift in these areas:
 - do not ship a feature that fetches, caches, waits, or falls back without log lines for those
   events, and do not log at `WARNING`+ an error that is also raised to the caller (§10.6)
 - do not move examples ahead of implementation reality
+- do not add hand-written guides back under `docs/` (§13). The owner removed them as useless
+  and confusing; put usage detail in the docstrings, which the API reference renders
 - do not add `mkdocs`, `mkdocs-material`, `mkdocs-gen-files`, or `mkdocs-literate-nav`
   back to the `docs` dependency group without a concrete need — the docs site runs on
   Zensical deliberately (§13); the latest releases of the last two pull in a package
@@ -809,6 +811,11 @@ package back as a dependency without re-reading that docstring first.
 
 Current shape:
 
+- the site is three things: `index.md`, `quickstart.md`, and the generated API reference.
+  There are **no hand-written guides**. A `docs/guides/` folder with one page per domain
+  slice existed until October 2026; the owner removed it as useless and confusing, because
+  each page restated docstrings and drifted from them. The docstrings (§10.4) are the
+  documentation, so a feature documents itself there and in this file, not in a guide.
 - `docs/gen_ref_pages.py` is a **plain pre-build script**, not a plugin — Zensical
   doesn't support the mkdocs-gen-files plugin API. It writes real files to `docs/api/`
   (gitignored, regenerated every build) from `opendota_sdk.__all__`, so the API
