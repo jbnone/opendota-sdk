@@ -101,7 +101,7 @@ jobs:
             done; do not stop at a link to a pre-filled PR page.
           claude_args: |
             --max-turns 80
-            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(uv run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(gh issue view:*),Bash(gh pr create:*),Bash(curl -sS https://api.opendota.com/api/:*),Bash(curl -sS https://raw.githubusercontent.com/odota/:*)"
+            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(uv run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(gh issue view:*),Bash(gh pr create:*),Bash(curl -sS https://api.opendota.com/api/*),Bash(curl -sS https://raw.githubusercontent.com/odota/*)"
 
   review:
     if: >-
