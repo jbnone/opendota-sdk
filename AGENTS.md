@@ -794,6 +794,10 @@ When editing this project, do not introduce instruction drift in these areas:
 - do not ship a feature that fetches, caches, waits, or falls back without log lines for those
   events, and do not log at `WARNING`+ an error that is also raised to the caller (§10.6)
 - do not move examples ahead of implementation reality
+- do not propose or build pro-scene endpoints (`/proMatches`, `/proPlayers`, `/teams/*`,
+  `/leagues/*`) or endpoints that expose OpenDota's machinery rather than Dota data
+  (`/explorer`, `/schema`, `/health`, `/metadata`, `/request/*`,
+  `POST /players/{account_id}/refresh`). The owner put both out of scope (§12.1)
 - do not add hand-written guides back under `docs/` (§13). The owner removed them as useless
   and confusing; put usage detail in the docstrings, which the API reference renders
 - do not add `mkdocs`, `mkdocs-material`, `mkdocs-gen-files`, or `mkdocs-literate-nav`
@@ -864,18 +868,23 @@ paths in October 2026. The SDK covers `/heroes`, `/heroStats`, `/heroes/{id}/ite
    `X-Rate-Limit-Remaining-Minute` (§8.2), and an explicit refresh or TTL for cached
    results (§2.3)
 
-**Not decided.** Do not propose these until the owner moves them into the list above:
+**Out of scope.** The owner ruled these out in October 2026. Never propose them:
 
-- the next domain after heroes. The candidates are players (`/players/*`, 15 endpoints),
-  matches (`/matches/{id}`, `/publicMatches`, `/parsedMatches`, `/heroes/{id}/matches`), and
-  the pro scene (`/proMatches`, `/proPlayers`, `/teams/*`, `/leagues/*`). Each brings a new
-  domain model, so the first issue in any of them is a design question (§10.1), not an
-  endpoint
-- endpoints that change server state: `POST /request/{match_id}` and
-  `POST /players/{account_id}/refresh`
-- `/explorer` (raw SQL), `/live`, `/search`, `/findMatches`, `/scenarios/*`,
-  `/distributions`, `/rankings`, `/records/{field}`, `/topPlayers`, `/metadata`, `/schema`,
-  and `/health`
+- the pro scene: `/proMatches`, `/proPlayers`, `/teams/*`, and `/leagues/*`. Matchups being
+  pro-league data (§6.4) is a property of a hero endpoint, not a step into this area
+- anything that is not domain-oriented, meaning it exposes OpenDota's own machinery rather
+  than Dota data: `/explorer` (raw SQL), `/schema`, `/health`, `/metadata`, the parse-request
+  queue (`GET /request/{jobId}`, `POST /request/{match_id}`), and
+  `POST /players/{account_id}/refresh`. The SDK hands callers typed Dota objects (§3.1), never
+  a query language or a job queue
+
+**Not decided.** Do not propose these until the owner moves them into the decided list:
+
+- the next domain after heroes: players (`/players/*`, 14 read endpoints) or matches
+  (`/matches/{id}`, `/publicMatches`, `/parsedMatches`, `/heroes/{id}/matches`). Each brings a
+  new domain model, so the first issue in either is a design question (§10.1), not an endpoint
+- the domain-oriented long tail: `/live`, `/search`, `/findMatches`, `/scenarios/*`,
+  `/distributions`, `/rankings`, `/records/{field}`, and `/topPlayers`
 - constants beyond the five files the SDK joins today
 
 When every decided item has an issue, open or closed, the groomer proposes nothing and says

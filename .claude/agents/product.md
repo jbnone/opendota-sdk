@@ -94,24 +94,35 @@ The body has these sections, in this order:
 - **Proposed surface.** The client method signature, each new model with its
   fields, any relationship method on an existing model, and what
   `__init__.py` would export (§3.5).
-- **Ballpark implementation plan.** Start the section with this sentence:
-  "This is a ballpark, not a spec: the developer verifies it, and AGENTS.md
-  wins where they disagree." Then:
-  - the existing pattern to copy, by section (§5, §6.3, §6.4)
-  - each file to touch, with one line on what changes in it
-  - the steps in order
-  - the tests, mapped to §9.2
-  - the log lines, mapped to §10.6
-  - the `AGENTS.md` sections to update
-  - a size, S, M, or L, with one line on why
-  - the risks, and the decisions the developer would otherwise have to guess
+- **Ballpark implementation plan.** A short design sketch at the level of
+  the codebase's architecture, not a to-do list. Open with: "A ballpark, not
+  a spec: the developer plans the details, and AGENTS.md wins where they
+  disagree." Then, in at most six bullets:
+  - **where it fits:** which existing slice it follows (§5, §6.3, §6.4) and
+    which layer owns what. The client owns the fetch and the cache, the
+    assembler does any normalization or cross-domain join without ever
+    fetching, the model is frozen, and a relationship method on an existing
+    model is a one-line delegation (§6.2). Mention only what is specific to
+    this feature.
+  - **where it departs** from that slice, and the data fact that forces it,
+    such as different keying, no join, or a payload with a different shape
+  - **what the caller gains** over the raw JSON: which ids become typed
+    objects, which derived values become properties (§3.3, §10.3)
+  - **how it keeps the project's intentions:** no new abstraction until §7's
+    conditions for one hold (§3.4), a small public surface (§3.5), async only.
+    Name any tension honestly. A different cache key than §6.3's, for
+    example, is the kind of evidence §7 asks for.
+  - **size:** S, M, or L, with one line on why
+
+  Do not list files, steps, tests, or log lines. Planning those is the
+  developer's job, and its role file already requires them.
 - **Out of scope.** What this issue deliberately does not do.
 - **Open questions for the owner.** Only when there are some. If the plan
   would need a new abstraction or a new domain, say so here rather than
   deciding it.
 
-Keep the whole body under about 120 lines. A plan the owner cannot read in
-two minutes will not get approved.
+Keep the whole body under about 80 lines. A proposal the owner cannot read
+in two minutes will not get approved.
 
 ## Never
 
