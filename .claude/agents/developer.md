@@ -52,12 +52,16 @@ in full before touching code. The section numbers below refer to it.
    "every match from the last year".
 3. **Copy the nearest pattern by hand.** A new per-hero endpoint copies §6.3:
    client method owning fetch, per-key cache and lock, assembler method that
-   never fetches, frozen model, one-line delegating method on `Hero`. Do not
-   extract a shared helper unless the issue explicitly asks for it (§7).
+   never fetches, frozen model, one-line delegating method on `Hero`. Per
+   §3.6 the client method is **private** (`_get_hero_durations()`) and the
+   model method is the only public entry point, even if the issue names a
+   public client method. Do not extract a shared helper unless the issue
+   explicitly asks for it (§7).
 4. **Ship the whole slice** (§9.2, §10.4, §10.6):
    - typed model with an `Attributes:` docstring, frozen like its siblings
    - assembler normalization with required-field `OpenDotaError`s
-   - client method with Google-style `Args:`/`Returns:`/`Raises:`
+   - client method, private per §3.6 unless it is a collection or lookup,
+     with Google-style `Args:`/`Returns:`/`Raises:`
    - tests: assembler behavior, a fixture regression sweep, client caching and
      single-flight under `asyncio.gather`, the relationship method raising
      without an active client, and every new log event asserted with `caplog`
