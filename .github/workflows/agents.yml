@@ -6,7 +6,8 @@
 #      to an issue. That label is the one and only approval to start building.
 #      `revise` sends the developer back to its own PR when the owner comments
 #      `@claude` there; a guard step refuses anything but this repo's
-#      `claude/` branches before Claude starts.
+#      `claude/` branches before Claude starts. `groom` only proposes: it
+#      opens `proposal` issues, which start nothing until the owner labels them.
 #   2. The `protect-main` ruleset requires a pull request, green CI, and an owner
 #      review before anything merges, with no bypass for the Claude app.
 #
@@ -25,6 +26,11 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   issue_comment:
     types: [created]
+  # Weekly proposals, Monday 07:00 UTC. GitHub disables schedules on a public
+  # repo after 60 days without a commit; a push re-enables them.
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -188,6 +194,54 @@ jobs:
             --max-turns 60
             --append-system-prompt "You are the developer role for this repository. Read .claude/agents/developer.md and follow its section 'Revising your own pull request'. Commit to this PR's branch; do not open a new pull request."
             --allowedTools "Read,Glob,Grep,Edit,Write,Bash(uv run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(gh pr view:*),Bash(gh api repos/jbnone/opendota-sdk/pulls/*/comments),Bash(gh api repos/jbnone/opendota-sdk/pulls/*/comments *),Bash(curl -sS https://api.opendota.com/api/*),Bash(curl -sS https://raw.githubusercontent.com/odota/*)"
+
+  groom:
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && github.actor == 'jbnone')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"  # same reason as `implement`
+    concurrency:
+      group: agents-groom
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write  # opens `proposal` issues; it cannot touch code or PRs
+      id-token: write  # same OIDC-to-app-token exchange as `implement`
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      # No uv and no `uv run` here: the groomer reads, fetches, and opens issues,
+      # and never executes repository code.
+      - name: Install subprocess isolation dependencies
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends bubblewrap socat && break
+            echo "apt-get attempt $i failed, retrying..."
+            sleep 5
+          done
+          command -v bwrap
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Run the product agent
+        uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are the product role for this repository. Read
+            `.claude/agents/product.md` and follow it exactly.
+          # Write is for the issue body file only; with `contents: read` and no
+          # git tools, nothing written can leave the runner except as an issue.
+          claude_args: |
+            --max-turns 50
+            --allowedTools "Read,Glob,Grep,Write,Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh pr list:*),Bash(curl -sS https://api.opendota.com/api),Bash(curl -sS https://api.opendota.com/api/*),Bash(curl -sS https://raw.githubusercontent.com/odota/*)"
 
   review:
     if: >-
