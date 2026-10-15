@@ -181,6 +181,25 @@ and `unbind_client()` are internal. Users reach them through `async with client`
 
 Avoid exporting internal helpers, registries, transport classes, or normalization machinery.
 
+### 3.6 Domain Entry Points
+
+When an endpoint is about one entity the SDK already models, its public entry point is a method
+on that model, not on the client: `Hero.get_durations()`, not
+`OpenDotaAsyncClient.get_hero_durations()`. The client still owns the fetch, the cache, and the
+normalization (§6.2), but in a **private** method (`_get_hero_durations()`) that the model method
+delegates to through the ambient client. This keeps the public surface domain-shaped (§3.1) and
+small (§3.5) without moving any logic into models.
+
+- methods with no single entity to hang on stay public on the client: the collections
+  (`get_heroes()`, `get_items()`, `get_hero_stats()`) and the lookups that produce an entity
+  (`get_hero()`, `get_item()`)
+- the cost is accepted: a caller holding only a hero id calls `get_hero(hero_id=...)` first,
+  which fetches the hero constants once per client and caches them
+- `get_hero_stat()`, `get_hero_item_popularity()`, and `get_hero_matchups()` predate this rule
+  and are public today. Removing the first two would break released callers.
+  `get_hero_matchups()` was merged after 0.1.0a10, so making it private before the next
+  release breaks nobody; that is the owner's call
+
 ---
 
 ## 4. Current Module Map
@@ -440,7 +459,9 @@ If future work introduces:
 then that work should be introduced deliberately, with tests and updated docs, rather than implied by the instructions file alone.
 
 `Hero.get_stats()` was introduced exactly that way and is the template to copy: declare the client
-method that owns the fetch, then add a one-line delegating async method on the model.
+method that owns the fetch, then add a one-line delegating async method on the model. For new
+entity-scoped endpoints that client method is private and the model method is the only public
+entry point (§3.6).
 `Hero.get_item_popularity()` and `Hero.get_matchups()` followed, written the same hand-rolled way; a
 fourth should be too.
 
@@ -448,7 +469,7 @@ The per-key trigger has now fired **twice**: item popularity (§6.3) and matchup
 per-key single-flight, with identical keying (hero id) and lock lifecycle (never evicted, no
 invalidation). Both endpoints joined a second domain, so the shared part is only the
 get-or-create-lock-then-fill skeleton. That decision is the owner's, not something to fold into an
-endpoint PR: do not extract it as part of adding `/durations`, `/players`, or `/benchmarks`. If one
+endpoint PR: do not extract it as part of adding `/durations` or `/benchmarks`. If one
 of those needs different keying (e.g. `/benchmarks` with bracket/role) or invalidation, that is
 evidence against a helper; if it matches again, propose the extraction as its own issue.
 
@@ -794,6 +815,11 @@ When editing this project, do not introduce instruction drift in these areas:
 - do not ship a feature that fetches, caches, waits, or falls back without log lines for those
   events, and do not log at `WARNING`+ an error that is also raised to the caller (§10.6)
 - do not move examples ahead of implementation reality
+- do not add a public client method for an endpoint about one modeled entity when a method on
+  that model is its natural entry point; the client method that owns the fetch is private
+  (§3.6)
+- do not propose an endpoint whose result is an entity the SDK does not model yet, such as
+  `Hero.get_players()` returning bare account ids before a players domain exists (§12.1)
 - do not propose or build pro-scene endpoints (`/proMatches`, `/proPlayers`, `/teams/*`,
   `/leagues/*`) or endpoints that expose OpenDota's machinery rather than Dota data
   (`/explorer`, `/schema`, `/health`, `/metadata`, `/request/*`,
@@ -836,7 +862,8 @@ If the implementation changes materially, update this file in the same work.
 3. Improve the hero flow without prematurely forcing a generalized service layer.
 4. Introduce new domain entities only when their owning fetch, enrichment, and model path is clear.
 5. `/itemPopularity` (§6.3) and `/matchups` (§6.4) are done. Add the remaining hero-scoped endpoints
-   (`/durations`, `/players`, and `/benchmarks`) one at a time, hand-rolled per §7; whether to
+   (`/durations` and `/benchmarks`) one at a time, hand-rolled per §7; `/players` waits for the
+   players domain (§12.1); whether to
    extract the per-key caching is a separate decision (§7).
 6. `README.md` has badges, a one-line description, the install line, and a link out to
    the docs site. It is also the PyPI landing page (`readme = "README.md"`), so the
@@ -859,14 +886,35 @@ The universe of endpoints is OpenDota's OpenAPI spec at `https://api.opendota.co
 paths in October 2026. The SDK covers `/heroes`, `/heroStats`, `/heroes/{id}/itemPopularity`,
 `/heroes/{id}/matchups`, and the five `/constants/*` files the hero and item flows join.
 
+**Only build on what exists.** A proposal may use only entities the SDK already models. An
+endpoint whose natural result is an entity the SDK does not model yet waits for that domain,
+however easy it looks: `/heroes/{id}/players` returns player account ids, so it waits for the
+players domain rather than shipping bare ids as `Hero.get_players()`. Prefer work that
+completes or hardens what exists over work that starts something new.
+
 **Decided**, proposed in this order, one issue each:
 
-1. the remaining hero-scoped endpoints from §12.5: `/heroes/{id}/durations`,
-   `/heroes/{id}/players`, and `/benchmarks`
+1. the remaining hero-scoped endpoints whose results need only existing entities:
+   `/heroes/{id}/durations` and `/benchmarks`
 2. the README `async with` quickstart (§12.6)
 3. the known limits this file already records: proactive throttling from
    `X-Rate-Limit-Remaining-Minute` (§8.2), and an explicit refresh or TTL for cached
    results (§2.3)
+
+**Technical and maintenance work** may be proposed alongside the list above, at most one issue
+per run so domain work is not crowded out. Each needs evidence in the repository, not taste:
+
+- this file disagreeing with the code, such as a stale count, a renamed function, or a rule
+  the code breaks
+- a §9.2 test category missing for an existing feature, or a test that asserts timing or
+  types where it should assert behavior (§8.1 and §6.3 have the history)
+- a suppressed lint or type rule (`# noqa`, `# type: ignore`), or a docstring that misstates
+  what the code does
+- a public method that §3.6 says should be private, when no released caller depends on it
+
+Not technical work for the groomer: dependency bumps (Renovate owns them), changes to
+`.github/workflows/` or `.claude/` (the developer may not touch them, §15), refactors that
+§3.4 calls speculative, or extracting a helper outside §7's condition.
 
 **Out of scope.** The owner ruled these out in October 2026. Never propose them:
 
@@ -881,9 +929,10 @@ paths in October 2026. The SDK covers `/heroes`, `/heroStats`, `/heroes/{id}/ite
 
 **Not decided.** Do not propose these until the owner moves them into the decided list:
 
-- the next domain after heroes: players (`/players/*`, 14 read endpoints) or matches
-  (`/matches/{id}`, `/publicMatches`, `/parsedMatches`, `/heroes/{id}/matches`). Each brings a
-  new domain model, so the first issue in either is a design question (§10.1), not an endpoint
+- the next domain after heroes: players (`/players/*`, 14 read endpoints, plus
+  `/heroes/{id}/players`) or matches (`/matches/{id}`, `/publicMatches`, `/parsedMatches`,
+  `/heroes/{id}/matches`). Each brings a new domain model, so the first issue in either is a
+  design question (§10.1), not an endpoint
 - the domain-oriented long tail: `/search`, `/findMatches`, `/scenarios/*`,
   `/distributions`, `/rankings`, `/records/{field}`, and `/topPlayers`
 - constants beyond the five files the SDK joins today
@@ -1018,9 +1067,11 @@ local use.
   treats anything unread or unverified as a blocking finding.
 
 - `groom` — the `product` role. Runs every Monday at 07:00 UTC, and on demand from the
-  Actions tab (`workflow_dispatch`, owner only). It proposes from §12.1 only, verifies each
-  candidate's payload live and its population in OpenDota's source, and opens at most three
-  issues labeled `proposal`, each with a ballpark implementation plan. It creates nothing
+  Actions tab (`workflow_dispatch`, owner only). It proposes from §12.1 only: domain work that
+  builds on entities the SDK already models, and at most one technical or maintenance issue
+  per run backed by quoted evidence. It verifies each domain candidate's payload live and its
+  population in OpenDota's source, and opens at most three issues labeled `proposal`, each
+  with a usage example of the proposed surface and a design-level plan. It creates nothing
   while three proposals are waiting for the owner. A `proposal` label starts nothing; the
   owner reads the issue and adds `approved`. The owner chose to build it after one
   end-to-end endpoint run (#80/#87), rather than after all the §12.5 endpoints as an

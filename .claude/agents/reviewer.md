@@ -46,8 +46,10 @@ the source the claim came from.
 2. **Pattern fidelity (§5, §6).** For a new endpoint: does the client own
    fetch and cache, does the assembler stay client-unaware, is the model
    frozen with no client field, is the relationship method a one-line
-   delegation? Did the author copy §6.3 by hand rather than extract a helper
-   nobody asked for (§7)?
+   delegation? Is the new client method private, with the model method as
+   the only public entry point (§3.6)? A new public client method for one
+   entity's data is a blocking finding. Did the author copy §6.3 by hand
+   rather than extract a helper nobody asked for (§7)?
 3. **Logging (§10.6).** Every fetch, cache fill, wait, and dropped record has
    a line at the right level with lazy `%` args. Nothing raised is also logged
    at `WARNING`+. No URL, header, body, or `str(exc)` reaches a log line. The
