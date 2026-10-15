@@ -1,7 +1,7 @@
 # OpenDota SDK — Agent Instructions
 
 **Status**: Alpha, architecture still settling  
-**Current focus**: Async client foundation, item domain vertical slice, hero model flow, hero stats slice  
+**Current focus**: Async client foundation, item domain vertical slice, hero flow and its per-hero endpoints  
 **Design direction**: Domain-focused SDK with transparent constant enrichment
 
 ---
@@ -70,7 +70,7 @@ Planned but not implemented yet:
 - match domain objects
 - service-per-resource architecture
 - session container abstraction
-- relationship navigation beyond the two hand-written `Hero` methods — no descriptor, query,
+- relationship navigation beyond the three hand-written `Hero` methods — no descriptor, query,
   or resource-graph machinery exists, and none should be added speculatively (§6.2, §11)
 
 When writing code or instructions, be explicit about whether something is **current** or **target architecture**.
@@ -132,8 +132,8 @@ This principle is strongest today in the item flow and should guide future work.
 - client entry points are always async
 - do not add sync mirrors for convenience
 
-Domain objects that need network access expose it as an async method — `Hero.get_stats()` and
-`Hero.get_item_popularity()` are the two instances today (§6.2, §6.3).
+Domain objects that need network access expose it as an async method — `Hero.get_stats()`,
+`Hero.get_item_popularity()`, and `Hero.get_matchups()` are the three instances today (§6.2–§6.4).
 
 ### 3.3 Internal Enrichment
 
@@ -192,7 +192,7 @@ src/opendota_sdk/
 ├── _context.py          # Ambient active-client binding for model relationship methods
 ├── _errors.py           # SDK-specific exception types
 ├── _records.py          # Raw item record boundary before assembly
-├── assembler.py         # Item, hero, hero-stats, and item-popularity normalization
+├── assembler.py         # Item, hero, hero-stats, item-popularity, and matchups normalization
 ├── client.py            # OpenDotaAsyncClient (owns all raw fetching and caching)
 ├── enums.py             # Hero-related enums and shared enum types
 ├── models.py            # Typed Item, Hero, HeroStats, HeroItemPopularity, HeroMatchups models, item enums
@@ -320,7 +320,7 @@ parts that are actually new:
   `None` when the matching pick count is zero
 
 `Hero.get_stats()` was the SDK's first relationship method; `Hero.get_item_popularity()` (§6.3) is
-the second, built the same way. Each resolves its client from a `ContextVar` in `_context.py`
+the second and `Hero.get_matchups()` (§6.4) the third, built the same way. Each resolves its client from a `ContextVar` in `_context.py`
 rather than holding one:
 
 - `OpenDotaAsyncClient.__aenter__` calls `bind_client(self)`; `__aexit__` calls `unbind_client()`.
@@ -794,6 +794,10 @@ When editing this project, do not introduce instruction drift in these areas:
 - do not ship a feature that fetches, caches, waits, or falls back without log lines for those
   events, and do not log at `WARNING`+ an error that is also raised to the caller (§10.6)
 - do not move examples ahead of implementation reality
+- do not propose or build pro-scene endpoints (`/proMatches`, `/proPlayers`, `/teams/*`,
+  `/leagues/*`) or endpoints that expose OpenDota's machinery rather than Dota data
+  (`/explorer`, `/schema`, `/health`, `/metadata`, `/request/*`,
+  `POST /players/{account_id}/refresh`), or `/live`. The owner put all three out of scope (§12.1)
 - do not add hand-written guides back under `docs/` (§13). The owner removed them as useless
   and confusing; put usage detail in the docstrings, which the API reference renders
 - do not add `mkdocs`, `mkdocs-material`, `mkdocs-gen-files`, or `mkdocs-literate-nav`
@@ -839,9 +843,53 @@ If the implementation changes materially, update this file in the same work.
    `async with` quickstart is the next thing worth adding.
 7. Docs site: scaffolded, see §13. Keep the Google-style docstrings on the public API
    (§10.4) accurate — they're the site's actual content, not just source-level docs.
-8. Agent workflow (§15): the `implement` and `review` jobs exist; run the §12.5 endpoints
-   through them one at a time and fold what the runs get wrong back into §11 and the role
-   files before adding the scheduled groomer and the on-demand architect.
+8. Agent workflow (§15): `implement`, `revise`, `review`, and `groom` exist. Keep folding
+   what each run gets wrong back into §11 and the role files. The on-demand architect waits
+   for the first proposal that needs design.
+
+### 12.1 What New Work May Target
+
+This is the scope the `product` role (§15) proposes from. It is the owner's to change, and
+nothing outside it is proposed until the owner moves it here. Who the SDK is for: Python
+developers building Dota 2 tools (README). It earns its place by returning typed, joined
+objects instead of raw JSON (§1, §3.3), so new work is worth proposing when it gives a caller
+data they would otherwise fetch and join by hand.
+
+The universe of endpoints is OpenDota's OpenAPI spec at `https://api.opendota.com/api`: 55
+paths in October 2026. The SDK covers `/heroes`, `/heroStats`, `/heroes/{id}/itemPopularity`,
+`/heroes/{id}/matchups`, and the five `/constants/*` files the hero and item flows join.
+
+**Decided**, proposed in this order, one issue each:
+
+1. the remaining hero-scoped endpoints from §12.5: `/heroes/{id}/durations`,
+   `/heroes/{id}/players`, and `/benchmarks`
+2. the README `async with` quickstart (§12.6)
+3. the known limits this file already records: proactive throttling from
+   `X-Rate-Limit-Remaining-Minute` (§8.2), and an explicit refresh or TTL for cached
+   results (§2.3)
+
+**Out of scope.** The owner ruled these out in October 2026. Never propose them:
+
+- the pro scene: `/proMatches`, `/proPlayers`, `/teams/*`, and `/leagues/*`. Matchups being
+  pro-league data (§6.4) is a property of a hero endpoint, not a step into this area
+- anything that is not domain-oriented, meaning it exposes OpenDota's own machinery rather
+  than Dota data: `/explorer` (raw SQL), `/schema`, `/health`, `/metadata`, the parse-request
+  queue (`GET /request/{jobId}`, `POST /request/{match_id}`), and
+  `POST /players/{account_id}/refresh`. The SDK hands callers typed Dota objects (§3.1), never
+  a query language or a job queue
+- live games: `/live`
+
+**Not decided.** Do not propose these until the owner moves them into the decided list:
+
+- the next domain after heroes: players (`/players/*`, 14 read endpoints) or matches
+  (`/matches/{id}`, `/publicMatches`, `/parsedMatches`, `/heroes/{id}/matches`). Each brings a
+  new domain model, so the first issue in either is a design question (§10.1), not an endpoint
+- the domain-oriented long tail: `/search`, `/findMatches`, `/scenarios/*`,
+  `/distributions`, `/rankings`, `/records/{field}`, and `/topPlayers`
+- constants beyond the five files the SDK joins today
+
+When every decided item has an issue, open or closed, the groomer proposes nothing and says
+so in its run log. That is the signal for the owner to decide the next domain.
 
 ---
 
@@ -969,12 +1017,18 @@ local use.
   data claim, and missed docstrings calling pro-league matchups "every match". The role now
   treats anything unread or unverified as a blocking finding.
 
-**Planned, not built:** a weekly `groom` job (the `product` role: at most three `proposal`
-issues per run, each one endpoint or one user-facing gap, with the raw payload verified
-live) and an on-demand `design` job (the `architect` role, on `needs-design`, posting
-options and a recommendation; the owner then labels `design-approved`). Both wait until
-the two current jobs have run the §12.5 endpoints and the role files have been corrected
-from what those runs got wrong.
+- `groom` — the `product` role. Runs every Monday at 07:00 UTC, and on demand from the
+  Actions tab (`workflow_dispatch`, owner only). It proposes from §12.1 only, verifies each
+  candidate's payload live and its population in OpenDota's source, and opens at most three
+  issues labeled `proposal`, each with a ballpark implementation plan. It creates nothing
+  while three proposals are waiting for the owner. A `proposal` label starts nothing; the
+  owner reads the issue and adds `approved`. The owner chose to build it after one
+  end-to-end endpoint run (#80/#87), rather than after all the §12.5 endpoints as an
+  earlier version of this section planned.
+
+**Planned, not built:** an on-demand `design` job (the `architect` role, on `needs-design`,
+posting options and a recommendation; the owner then labels `design-approved`). It waits for
+the first proposal that needs design, most likely the first issue in a new domain (§12.1).
 
 **Gates, and why each exists.** Only the owner can start or ship an implementation:
 
@@ -1020,6 +1074,12 @@ from what those runs got wrong.
    installs it only when `allowed_non_write_users` is set, which this workflow never sets,
    so each job has its own "Install subprocess isolation dependencies" step copied from the
    action. The first run with the scrub on failed at startup for exactly this reason.
+6. `groom` cannot execute code: it has no `uv`, no `Bash(uv run:*)`, no git tools, and
+   `contents: read`. It reads the repository, lists and creates issues, and uses the same
+   read-only `curl` forms, plus the bare spec URL. It does read issue and PR titles written by
+   anyone on a public repo, so a prompt injection could at worst produce a bad `proposal`
+   issue, which starts nothing. Do not give it `uv run`, write access to code, or any label
+   but `proposal`.
 
 Labels: `proposal` (groomer output, nothing runs), `needs-design` (architect, planned),
 `design-approved` and `approved` (implement). The action restores `.claude/` and `CLAUDE.md`

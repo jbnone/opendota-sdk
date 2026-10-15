@@ -23,7 +23,10 @@ in full before touching code. The section numbers below refer to it.
 1. **Plan first.** Before editing, post one comment on the issue with: the
    files you will touch, the existing pattern you are copying (§5 for items,
    §6.1 for heroes, §6.3 for per-hero endpoints), the tests you will add, and
-   the log lines you will emit. Keep it under 20 lines.
+   the log lines you will emit. Keep it under 20 lines. If the issue came from
+   the product role (labeled `proposal`), its ballpark plan is a starting
+   point, not a spec: verify each part, and where it conflicts with
+   `AGENTS.md`, follow `AGENTS.md` and say so in your plan comment.
 2. **Verify the data, do not assume it.** For a new endpoint, fetch the real
    payload from `https://api.opendota.com/api/...` and record it as a fixture
    under `tests/fixtures/opendota_api/`, the way item popularity did (§6.3).
