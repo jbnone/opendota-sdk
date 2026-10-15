@@ -797,7 +797,7 @@ When editing this project, do not introduce instruction drift in these areas:
 - do not propose or build pro-scene endpoints (`/proMatches`, `/proPlayers`, `/teams/*`,
   `/leagues/*`) or endpoints that expose OpenDota's machinery rather than Dota data
   (`/explorer`, `/schema`, `/health`, `/metadata`, `/request/*`,
-  `POST /players/{account_id}/refresh`). The owner put both out of scope (§12.1)
+  `POST /players/{account_id}/refresh`), or `/live`. The owner put all three out of scope (§12.1)
 - do not add hand-written guides back under `docs/` (§13). The owner removed them as useless
   and confusing; put usage detail in the docstrings, which the API reference renders
 - do not add `mkdocs`, `mkdocs-material`, `mkdocs-gen-files`, or `mkdocs-literate-nav`
@@ -877,13 +877,14 @@ paths in October 2026. The SDK covers `/heroes`, `/heroStats`, `/heroes/{id}/ite
   queue (`GET /request/{jobId}`, `POST /request/{match_id}`), and
   `POST /players/{account_id}/refresh`. The SDK hands callers typed Dota objects (§3.1), never
   a query language or a job queue
+- live games: `/live`
 
 **Not decided.** Do not propose these until the owner moves them into the decided list:
 
 - the next domain after heroes: players (`/players/*`, 14 read endpoints) or matches
   (`/matches/{id}`, `/publicMatches`, `/parsedMatches`, `/heroes/{id}/matches`). Each brings a
   new domain model, so the first issue in either is a design question (§10.1), not an endpoint
-- the domain-oriented long tail: `/live`, `/search`, `/findMatches`, `/scenarios/*`,
+- the domain-oriented long tail: `/search`, `/findMatches`, `/scenarios/*`,
   `/distributions`, `/rankings`, `/records/{field}`, and `/topPlayers`
 - constants beyond the five files the SDK joins today
 
