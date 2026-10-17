@@ -844,6 +844,9 @@ When editing this project, do not introduce instruction drift in these areas:
   start an implementation. Do not re-add an `environment:` with required reviewers to
   `implement` either: the owner chose the `approved` label as the single start approval,
   and a second click was tried and rejected as friction (§15)
+- do not widen `refine`'s tool rules beyond the issue that triggered it. Every `gh` rule names
+  that issue's number and the triggering comment's id, and only the title and body may be
+  edited, so a steering comment can never reach another issue or a label (§15)
 - do not remove `revise`'s guard step or widen its `if:` beyond the owner's `@claude`
   comment. The action checks out the PR head itself, forks included, so without the guard
   an owner comment on a fork PR would run that fork's code with the job's secrets (§15)
@@ -1076,6 +1079,13 @@ local use.
   owner reads the issue and adds `approved`. The owner chose to build it after one
   end-to-end endpoint run (#80/#87), rather than after all the §12.5 endpoints as an
   earlier version of this section planned.
+- `refine` — the `product` role again, sent back to one of its proposals. Fires when the
+  owner comments `@claude` on an open issue labeled `proposal` and not yet `approved`. The
+  owner's comment is the whole task: the groomer rewrites that issue's body, and its title if
+  the entry point's name changed, re-verifying any data the change touches, then replies
+  once with what it changed. It shares `groom`'s queue. After `approved`, steering moves to
+  the developer's PR through `revise`, so between the two the owner can steer both agents
+  where they work: the groomer on the issue, the developer on the PR.
 
 **Planned, not built:** an on-demand `design` job (the `architect` role, on `needs-design`,
 posting options and a recommendation; the owner then labels `design-approved`). It waits for
@@ -1125,12 +1135,13 @@ the first proposal that needs design, most likely the first issue in a new domai
    installs it only when `allowed_non_write_users` is set, which this workflow never sets,
    so each job has its own "Install subprocess isolation dependencies" step copied from the
    action. The first run with the scrub on failed at startup for exactly this reason.
-6. `groom` cannot execute code: it has no `uv`, no `Bash(uv run:*)`, no git tools, and
-   `contents: read`. It reads the repository, lists and creates issues, and uses the same
-   read-only `curl` forms, plus the bare spec URL. It does read issue and PR titles written by
-   anyone on a public repo, so a prompt injection could at worst produce a bad `proposal`
-   issue, which starts nothing. Do not give it `uv run`, write access to code, or any label
-   but `proposal`.
+6. `groom` and `refine` cannot execute code: they have no `uv`, no `Bash(uv run:*)`, no git
+   tools, and `contents: read`. They read the repository and use the same read-only `curl`
+   forms, plus the bare spec URL. `groom` lists and creates issues; `refine` can read, edit
+   (title and body only), and comment on the one issue that triggered it. `groom` reads issue
+   and PR titles written by anyone on a public repo, and `refine` reads the issue's comments,
+   so a prompt injection could at worst produce a bad `proposal` issue, which starts nothing.
+   Do not give either `uv run`, write access to code, or any label but `proposal`.
 
 Labels: `proposal` (groomer output, nothing runs), `needs-design` (architect, planned),
 `design-approved` and `approved` (implement). The action restores `.claude/` and `CLAUDE.md`
