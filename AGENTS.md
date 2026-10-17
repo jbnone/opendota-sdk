@@ -648,13 +648,19 @@ Use the existing toolchain:
 ```bash
 uv run pytest
 uv run ruff check
+uv run ruff format --check
 uv run ty check
 uv run zizmor .github/workflows   # only when touching workflows (§14)
 ```
 
 For narrower work, run the smallest relevant subset first.
 
-Always run `ruff check` and `ty check` on any file you touch and resolve issues before considering the work done, not just `pytest`. Pre-existing issues in files you did not touch may be left alone but should be called out rather than silently ignored.
+Always run `ruff check`, `ruff format --check`, and `ty check` on any file you touch and resolve issues before considering the work done, not just `pytest`. Pre-existing issues in files you did not touch may be left alone but should be called out rather than silently ignored.
+
+`ruff format` formats the Python code blocks inside Markdown files by default, so `README.md`
+and the `docs/` pages are checked too, and CI's lint job fails on them. A failure in a file the
+change touches is never pre-existing. The README quickstart PR (#97) failed CI three times
+after the developer called its own README edit a pre-existing format issue.
 
 `ruff check` includes the pydocstyle (`D`) rules in Google convention, so a new public
 member without a docstring, or an `Args:` section that omits a parameter, fails lint (§10.4).

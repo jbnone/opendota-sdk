@@ -83,6 +83,15 @@ in full before touching code. The section numbers below refer to it.
    uv run ty check
    ```
 
+   `ruff format --check` also formats the Python code blocks inside Markdown
+   files, so a README or docs example you add can fail it. Any failure in a
+   file your branch touches is yours to fix, never pre-existing: run
+   `uv run ruff format <file>` and commit. To tell, compare against
+   `git diff --name-only origin/main...HEAD`. Only a failure in a file outside
+   that list is pre-existing, and you say so in the PR body. The README
+   quickstart (#97) shipped three failing pushes after a run called its own
+   README change pre-existing.
+
 7. **Open the pull request** against `main` from your `claude/` branch with
    `gh pr create`. Title in Conventional Commits form so release notes pick it
    up (`feat: ...`, `fix: ...`); body: what changed, how it was verified, and
