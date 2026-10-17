@@ -51,10 +51,11 @@ Implemented today:
 
 - item constants flow via `get_items()`
 - hero list flow via `get_heroes()` returning typed `Hero` models
-- hero statistics flow via `get_hero_stats()`/`get_hero_stat()` returning typed `HeroStats` models
-- hero item popularity via `get_hero_item_popularity()` returning `HeroItemPopularity`, with every
+- hero statistics flow via `get_hero_stats()` (every hero) and `Hero.get_stats()` (one hero),
+  returning typed `HeroStats` models
+- hero item popularity via `Hero.get_item_popularity()` returning `HeroItemPopularity`, with every
   item id resolved to an `Item` — the first cross-domain join, and the first per-key endpoint (§6.3)
-- hero matchups via `get_hero_matchups()` returning `HeroMatchups`, with every opposing hero id
+- hero matchups via `Hero.get_matchups()` returning `HeroMatchups`, with every opposing hero id
   resolved to a `Hero` — the second cross-domain join and the second per-key endpoint (§6.4)
 - three relationship methods, `Hero.get_stats()`, `Hero.get_item_popularity()`, and
   `Hero.get_matchups()`, resolved through an ambient client (§6.2)
@@ -95,7 +96,8 @@ concurrent calls both triggering a fetch before either populates the cache. Both
 corrupts the cache; the objects inside are frozen dataclasses, so sharing references to them across calls
 is safe.
 
-`get_hero_stats()`/`get_hero_stat()` use that identical cache+lock+index shape even though `/heroStats`
+`get_hero_stats()` and the private `_get_hero_stat()` behind `Hero.get_stats()` use that identical
+cache+lock+index shape even though `/heroStats`
 is live aggregate data rather than patch-gated constants. That is deliberate: the lock **is** the
 single-flight mechanism, so `asyncio.gather(*(hero.get_stats() for hero in heroes))` over every hero
 collapses to one HTTP request instead of one per hero. Dropping the cache to keep the numbers fresh
@@ -145,10 +147,10 @@ Current examples:
 - `OpenDotaAsyncClient.get_heroes()` merges `/heroes` with `/constants/heroes` and returns typed `Hero` models
 - `OpenDotaAsyncClient.get_hero_stats()` folds `/heroStats`'s flat `{bracket}_pick`/`{bracket}_win` keys
   into typed `HeroBracketStats` entries and derives win rates, instead of exposing the raw numeric keys
-- `OpenDotaAsyncClient.get_hero_item_popularity()` turns `/heroes/{id}/itemPopularity`'s bare item ids
+- `Hero.get_item_popularity()` turns `/heroes/{id}/itemPopularity`'s bare item ids
   into full `Item` objects, joining two domains so the caller never cross-references
   `/constants/items` by hand
-- `OpenDotaAsyncClient.get_hero_matchups()` turns `/heroes/{id}/matchups`'s bare opposing hero ids
+- `Hero.get_matchups()` turns `/heroes/{id}/matchups`'s bare opposing hero ids
   into full `Hero` objects, joining the matchups payload with the hero constants
 
 ### 3.4 Incremental Generalization
@@ -196,10 +198,13 @@ small (§3.5) without moving any logic into models.
   (`get_hero()`, `get_item()`)
 - the cost is accepted: a caller holding only a hero id calls `get_hero(hero_id=...)` first,
   which fetches the hero constants once per client and caches them
-- `get_hero_stat()`, `get_hero_item_popularity()`, and `get_hero_matchups()` predate this rule
-  and are public today. Removing the first two would break released callers.
-  `get_hero_matchups()` was merged after 0.1.0a10, so making it private before the next
-  release breaks nobody; that is the owner's call
+- `get_hero_stat()`, `get_hero_item_popularity()`, and `get_hero_matchups()` were public
+  until October 2026 and are now private (`_get_hero_stat()` and so on), so `Hero` is the only
+  public way to per-hero data. The first two shipped in 0.1.0a10 and earlier, so this is a
+  breaking change for those callers; the owner chose a consistent surface over compatibility
+  while the SDK is alpha. A caller moves from `client.get_hero_stat(hero_id=1)` to
+  `(await client.get_hero(hero_id=1)).get_stats()`. `test_client.py` pins that the old
+  names are gone
 
 ---
 
@@ -357,7 +362,7 @@ rather than holding one:
   `activate()`/`deactivate()` expose the same thing outside `async with`.
 - `active_client()` raises `OpenDotaError` with actionable text when nothing is bound, so calling
   `hero.get_stats()` outside a client scope fails loudly instead of silently.
-- the method body is a one-line delegation to `client.get_hero_stat(hero_id=self.id)`. The client
+- the method body is a one-line delegation to `client._get_hero_stat(hero_id=self.id)`. The client
   stays the only owner of fetching, caching, and normalization — relationship methods add no logic.
 
 Why this shape, so it is not re-litigated:
@@ -402,9 +407,10 @@ Shape and decisions:
   payloads. The assembler never fetches. Ids missing from the item constants (possible mid-patch)
   are dropped with **one WARNING per payload**, per §10.6; all ids resolved against live data and
   the vendored fixture when this was built.
-- **id only, no `hero_name`.** `get_hero()`/`get_hero_stat()` resolve names for free from bulk
-  payloads they hold; this endpoint has none, so a name parameter would hide a five-payload hero
-  fetch behind a lookup. Name holders go `get_hero(HeroName.ANTI_MAGE)` → `Hero.get_item_popularity()`.
+- **id only, no `hero_name`.** The private `_get_hero_item_popularity()` takes the id `Hero`
+  passes; this endpoint holds no bulk payload to resolve a name from, so a name parameter would
+  hide a five-payload hero fetch behind a lookup. Name holders go
+  `get_hero(HeroName.ANTI_MAGE)` → `Hero.get_item_popularity()`.
 - **per-key caching, the first instance.** `_hero_item_popularity_cache` and
   `_hero_item_popularity_locks` are dicts keyed by hero id. Concurrent calls for one hero collapse to
   one request; different heroes fetch in parallel. A single shared lock would still pass a
@@ -814,7 +820,7 @@ When editing this project, do not introduce instruction drift in these areas:
 - do not make `get_hero()` accept only `HeroName`, and do not build `HeroName` from the API at
   runtime. A plain internal-name string must keep working for heroes newer than the enum, and a
   runtime-built enum is invisible to type checkers and editors, which is the point of it (§6.1)
-- do not add `hero_name` to per-hero endpoints like `get_hero_item_popularity()` "for symmetry",
+- do not add `hero_name` to per-hero endpoints like `_get_hero_item_popularity()` "for symmetry",
   and do not collapse their per-hero locks into one shared lock. The first would hide a full hero
   fetch behind a lookup; the second would serialize every hero while still passing a naive
   "fetches once" test (§6.3)
@@ -921,8 +927,10 @@ completes or hardens what exists over work that starts something new.
 
 1. the remaining hero-scoped endpoints whose results need only existing entities:
    `/heroes/{id}/durations` and `/benchmarks`
-2. the README `async with` quickstart (§12.6)
-3. the known limits this file already records: proactive throttling from
+2. an `ItemName` enum and a positional `get_item()` lookup, mirroring `HeroName` and
+   `get_hero()` (§6.1), so callers stop passing internal item name strings
+3. the README `async with` quickstart (§12.6)
+4. the known limits this file already records: proactive throttling from
    `X-Rate-Limit-Remaining-Minute` (§8.2), and an explicit refresh or TTL for cached
    results (§2.3)
 

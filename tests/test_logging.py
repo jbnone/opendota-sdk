@@ -223,8 +223,8 @@ async def test_item_popularity_logs_its_cache_fill_once(sdk_logs):
 
     async with OpenDotaAsyncClient() as client:
         client._get = AsyncMock(side_effect=fake_get)
-        await client.get_hero_item_popularity(hero_id=1)
-        await client.get_hero_item_popularity(hero_id=1)
+        await client._get_hero_item_popularity(hero_id=1)
+        await client._get_hero_item_popularity(hero_id=1)
 
     fills = [m for m in messages(sdk_logs) if "item popularity" in m]
     assert len(fills) == 1
