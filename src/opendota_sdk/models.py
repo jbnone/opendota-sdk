@@ -572,9 +572,8 @@ class Hero:
     async def get_stats(self) -> HeroStats | None:
         """Fetch this hero's live pick/win statistics via the active client.
 
-        Delegates to `OpenDotaAsyncClient.get_hero_stat()` on the client bound to the
-        current context, so it shares that client's cache: gathering `get_stats()` over
-        every hero costs one HTTP request.
+        Uses the client bound to the current context and shares its cache: gathering
+        `get_stats()` over every hero costs one HTTP request.
 
         Returns:
             The hero's statistics, or `None` if `/heroStats` has no entry for it.
@@ -583,15 +582,15 @@ class Hero:
             OpenDotaError: If no client is active, i.e. this is called outside
                 `async with OpenDotaAsyncClient()` and without `client.activate()`.
         """
-        return await active_client().get_hero_stat(hero_id=self.id)
+        return await active_client()._get_hero_stat(hero_id=self.id)
 
     async def get_item_popularity(self) -> HeroItemPopularity:
         """Fetch what this hero buys in each phase of the game, via the active client.
 
-        Delegates to `OpenDotaAsyncClient.get_hero_item_popularity()` on the client bound
-        to the current context. Unlike `get_stats()`, this is a per-hero endpoint, so
-        gathering it over every hero costs one request per hero, not one in total; repeat
-        calls for the same hero are served from that client's cache.
+        Uses the client bound to the current context. Unlike `get_stats()`, this is a
+        per-hero endpoint, so gathering it over every hero costs one request per hero,
+        not one in total; repeat calls for the same hero are served from that client's
+        cache.
 
         Returns:
             The hero's item popularity, with every item resolved to an `Item`.
@@ -600,15 +599,14 @@ class Hero:
             OpenDotaError: If no client is active, i.e. this is called outside
                 `async with OpenDotaAsyncClient()` and without `client.activate()`.
         """
-        return await active_client().get_hero_item_popularity(hero_id=self.id)
+        return await active_client()._get_hero_item_popularity(hero_id=self.id)
 
     async def get_matchups(self) -> HeroMatchups:
         """Fetch this hero's results against every opposing hero, via the active client.
 
-        Delegates to `OpenDotaAsyncClient.get_hero_matchups()` on the client bound to the
-        current context. Like `get_item_popularity()`, this is a per-hero endpoint:
-        gathering it over every hero costs one request per hero, and repeat calls for the
-        same hero are served from that client's cache.
+        Uses the client bound to the current context. Like `get_item_popularity()`, this
+        is a per-hero endpoint: gathering it over every hero costs one request per hero,
+        and repeat calls for the same hero are served from that client's cache.
 
         Returns:
             The hero's matchups, with every opposing hero resolved to a `Hero`.
@@ -617,7 +615,7 @@ class Hero:
             OpenDotaError: If no client is active, i.e. this is called outside
                 `async with OpenDotaAsyncClient()` and without `client.activate()`.
         """
-        return await active_client().get_hero_matchups(hero_id=self.id)
+        return await active_client()._get_hero_matchups(hero_id=self.id)
 
     def as_dict(self) -> dict[str, Any]:
         """Return a copy of the raw merged payload this hero was assembled from.

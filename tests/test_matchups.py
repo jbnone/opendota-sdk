@@ -187,7 +187,7 @@ async def test_get_hero_matchups_resolves_heroes(heroes_by_id):
         _stub_heroes(client, heroes_by_id)
         client._get = AsyncMock(side_effect=_matchups_get())
 
-        result = await client.get_hero_matchups(hero_id=1)
+        result = await client._get_hero_matchups(hero_id=1)
 
     assert result.hero_id == 1
     assert result.matchups[0].hero.localized_name == "Axe"
@@ -202,9 +202,9 @@ async def test_get_hero_matchups_is_cached_per_hero(heroes_by_id):
         _stub_heroes(client, heroes_by_id)
         client._get = AsyncMock(side_effect=_matchups_get(calls))
 
-        first = await client.get_hero_matchups(hero_id=1)
-        second = await client.get_hero_matchups(hero_id=1)
-        await client.get_hero_matchups(hero_id=2)
+        first = await client._get_hero_matchups(hero_id=1)
+        second = await client._get_hero_matchups(hero_id=1)
+        await client._get_hero_matchups(hero_id=2)
 
     assert first is second
     assert sorted(calls) == ["/heroes/1/matchups", "/heroes/2/matchups"]
@@ -218,7 +218,7 @@ async def test_concurrent_matchups_calls_for_one_hero_share_one_request(heroes_b
         client._get = AsyncMock(side_effect=_matchups_get(calls, delay=0.01))
 
         results = await asyncio.gather(
-            *(client.get_hero_matchups(hero_id=1) for _ in range(5))
+            *(client._get_hero_matchups(hero_id=1) for _ in range(5))
         )
 
     assert calls.count("/heroes/1/matchups") == 1
@@ -235,7 +235,7 @@ async def test_different_heroes_fetch_matchups_in_parallel_not_in_series(heroes_
         client._get = AsyncMock(side_effect=_matchups_get(calls, 0.01, inflight))
 
         await asyncio.gather(
-            *(client.get_hero_matchups(hero_id=hero_id) for hero_id in range(1, 6))
+            *(client._get_hero_matchups(hero_id=hero_id) for hero_id in range(1, 6))
         )
 
     assert len(calls) == 5
@@ -248,7 +248,7 @@ async def test_unknown_hero_matchups_is_empty_not_an_error(heroes_by_id):
         _stub_heroes(client, heroes_by_id)
         client._get = AsyncMock(side_effect=_matchups_get(payload=[]))
 
-        result = await client.get_hero_matchups(hero_id=99999)
+        result = await client._get_hero_matchups(hero_id=99999)
 
     assert result.is_empty
 
@@ -260,8 +260,8 @@ async def test_matchups_log_their_cache_fill_once(heroes_by_id, caplog):
     async with OpenDotaAsyncClient() as client:
         _stub_heroes(client, heroes_by_id)
         client._get = AsyncMock(side_effect=_matchups_get())
-        await client.get_hero_matchups(hero_id=1)
-        await client.get_hero_matchups(hero_id=1)
+        await client._get_hero_matchups(hero_id=1)
+        await client._get_hero_matchups(hero_id=1)
 
     fills = [
         (r.levelno, r.getMessage())
@@ -287,9 +287,9 @@ async def test_hero_get_matchups_outside_client_scope_raises():
 async def test_hero_get_matchups_delegates_to_active_client():
     """A one-line delegation: the client still owns the fetch, cache, and assembly."""
     async with OpenDotaAsyncClient() as client:
-        client.get_hero_matchups = AsyncMock(return_value="sentinel")
+        client._get_hero_matchups = AsyncMock(return_value="sentinel")
 
         result = await _hero(3).get_matchups()
 
     assert result == "sentinel"
-    client.get_hero_matchups.assert_awaited_once_with(hero_id=3)
+    client._get_hero_matchups.assert_awaited_once_with(hero_id=3)

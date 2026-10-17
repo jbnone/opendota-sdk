@@ -32,8 +32,8 @@ The SDK is still alpha and grows one domain slice at a time. Today it covers:
   models assembled from `/constants/items`.
 - **Heroes** — [`get_heroes()`](api/client.md) / `get_hero()`, merging `/heroes` with
   four constants endpoints into typed `Hero` models with abilities, talents, and lore.
-- **Hero statistics** — [`get_hero_stats()`](api/client.md) / `get_hero_stat()`,
-  plus the `hero.get_stats()` relationship method, exposing live pick/win data.
+- **Hero statistics** — [`get_hero_stats()`](api/client.md) for every hero, and the
+  `hero.get_stats()` relationship method for one, exposing live pick/win data.
 
 Player and match domains, and a broader relationship-navigation layer, aren't built yet.
 See the project's `AGENTS.md` for the full picture of what's current versus planned.

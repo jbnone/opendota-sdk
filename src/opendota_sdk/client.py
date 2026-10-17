@@ -105,7 +105,6 @@ class OpenDotaAsyncClient:
 
         self._hero_stats_cache: list[HeroStats] | None = None
         self._hero_stats_by_id: dict[int, HeroStats] = {}
-        self._hero_stats_by_name: dict[str, HeroStats] = {}
         self._hero_stats_lock = asyncio.Lock()
 
         # Per-hero endpoints are cached per hero id, each behind its own lock: concurrent
@@ -278,7 +277,6 @@ class OpenDotaAsyncClient:
                     raw_stats = await self._get("/heroStats")
                     stats = self._assembler.list_hero_stats(raw_stats)
                     self._hero_stats_by_id = {stat.hero_id: stat for stat in stats}
-                    self._hero_stats_by_name = {stat.hero_name: stat for stat in stats}
                     self._hero_stats_cache = stats
                     logger.debug(
                         "Loaded statistics for %d heroes in %.2fs; cached on client",
@@ -288,48 +286,35 @@ class OpenDotaAsyncClient:
 
         return list(self._hero_stats_cache)
 
-    async def get_hero_stat(
-        self, *, hero_id: int | None = None, hero_name: str | None = None
-    ) -> HeroStats | None:
-        """Look up a single hero's live statistics by id or internal name.
+    async def _get_hero_stat(self, *, hero_id: int) -> HeroStats | None:
+        """Look up one hero's live statistics; the fetch behind `Hero.get_stats()`.
 
-        Populates the stats cache via `get_hero_stats()` if needed, then resolves from an
-        index. This is what `Hero.get_stats()` delegates to.
+        Private per AGENTS.md §3.6: callers reach it through `Hero.get_stats()`. Populates
+        the stats cache via `get_hero_stats()` if needed, then resolves from an index, so
+        gathering `get_stats()` over every hero still costs one request.
 
         Args:
             hero_id: Numeric hero id.
-            hero_name: Internal hero name (e.g. `"npc_dota_hero_antimage"`).
 
         Returns:
             The matching statistics, or `None` if `/heroStats` has no entry for the hero.
 
         Raises:
-            ValueError: If neither or both of `hero_id` and `hero_name` are given.
             OpenDotaError: If the underlying `get_hero_stats()` fetch fails.
         """
-        if hero_id is None and hero_name is None:
-            raise ValueError("Either hero_id or hero_name must be provided.")
-        if hero_id is not None and hero_name is not None:
-            raise ValueError("Provide either hero_id or hero_name, not both.")
-
         await self.get_hero_stats()
-        if hero_id is not None:
-            return self._hero_stats_by_id.get(hero_id)
-        return self._hero_stats_by_name.get(hero_name)
+        return self._hero_stats_by_id.get(hero_id)
 
-    async def get_hero_item_popularity(self, *, hero_id: int) -> HeroItemPopularity:
-        """Fetch what a hero buys in each phase of the game, with every item resolved.
+    async def _get_hero_item_popularity(self, *, hero_id: int) -> HeroItemPopularity:
+        """Fetch a hero's item popularity; the fetch behind `Hero.get_item_popularity()`.
 
+        Private per AGENTS.md §3.6: callers reach it through `Hero.get_item_popularity()`.
         Fetches `/heroes/{hero_id}/itemPopularity` alongside the item constants (via
         `get_items()`, so those are fetched at most once per client) and turns each item
         id into an `Item`. See `HeroItemPopularity` for what the counts measure.
 
         Cached per hero: concurrent calls for the same hero share one request, and calls
-        for different heroes run in parallel. Unlike `get_hero()` and `get_hero_stat()`,
-        this takes an id only -- those resolve a name from a bulk payload they already
-        hold, whereas resolving one here would mean fetching every hero first. Callers
-        holding a hero name can use `get_hero()` and then
-        `Hero.get_item_popularity()`.
+        for different heroes run in parallel.
 
         Args:
             hero_id: Numeric hero id.
@@ -380,17 +365,16 @@ class OpenDotaAsyncClient:
 
         return cached
 
-    async def get_hero_matchups(self, *, hero_id: int) -> HeroMatchups:
-        """Fetch a hero's results against every opposing hero, with each one resolved.
+    async def _get_hero_matchups(self, *, hero_id: int) -> HeroMatchups:
+        """Fetch a hero's matchups; the fetch behind `Hero.get_matchups()`.
 
+        Private per AGENTS.md §3.6: callers reach it through `Hero.get_matchups()`.
         Fetches `/heroes/{hero_id}/matchups` alongside the hero constants (via
         `get_heroes()`, so those are fetched at most once per client) and turns each
         opposing hero id into a `Hero`. See `HeroMatchups` for what the counts measure.
 
         Cached per hero: concurrent calls for the same hero share one request, and calls
-        for different heroes run in parallel. Takes an id only, for the same reason as
-        `get_hero_item_popularity()`. Callers holding a name can use
-        `get_hero()` and then `Hero.get_matchups()`.
+        for different heroes run in parallel.
 
         Args:
             hero_id: Numeric hero id.

@@ -553,30 +553,22 @@ async def test_get_hero_stats_concurrent_calls_fetch_once():
 
 
 @pytest.mark.asyncio
-async def test_get_hero_stat_by_id_and_name():
+async def test_get_hero_stat_resolves_by_id():
     async with OpenDotaAsyncClient() as client:
         client._get = AsyncMock(return_value=_HERO_STATS_API)
 
-        by_id = await client.get_hero_stat(hero_id=2)
-        by_name = await client.get_hero_stat(hero_name="npc_dota_hero_axe")
-        missing = await client.get_hero_stat(hero_id=999)
+        found = await client._get_hero_stat(hero_id=2)
+        missing = await client._get_hero_stat(hero_id=999)
 
-    assert by_id is not None
-    assert by_id.hero_name == "npc_dota_hero_axe"
-    assert by_name == by_id
+    assert found is not None
+    assert found.hero_name == "npc_dota_hero_axe"
     assert missing is None
 
 
-@pytest.mark.asyncio
-async def test_get_hero_stat_requires_exactly_one_identifier():
-    async with OpenDotaAsyncClient() as client:
-        client._get = AsyncMock(return_value=_HERO_STATS_API)
-
-        with pytest.raises(ValueError, match="Either hero_id or hero_name"):
-            await client.get_hero_stat()
-
-        with pytest.raises(ValueError, match="not both"):
-            await client.get_hero_stat(hero_id=1, hero_name="npc_dota_hero_antimage")
+def test_per_hero_lookups_are_not_public_client_methods():
+    # AGENTS.md §3.6: per-hero data is reached through `Hero`, not the client.
+    for name in ("get_hero_stat", "get_hero_item_popularity", "get_hero_matchups"):
+        assert not hasattr(OpenDotaAsyncClient, name), name
 
 
 @pytest.mark.asyncio
@@ -647,7 +639,7 @@ async def test_get_hero_item_popularity_resolves_items():
     async with OpenDotaAsyncClient() as client:
         client._get = AsyncMock(side_effect=_popularity_get())
 
-        popularity = await client.get_hero_item_popularity(hero_id=1)
+        popularity = await client._get_hero_item_popularity(hero_id=1)
 
     assert popularity.hero_id == 1
     assert popularity.start_game[0].item.descriptive_name == "Iron Branch"
@@ -661,9 +653,9 @@ async def test_get_hero_item_popularity_is_cached_per_hero():
     async with OpenDotaAsyncClient() as client:
         client._get = AsyncMock(side_effect=_popularity_get(calls))
 
-        first = await client.get_hero_item_popularity(hero_id=1)
-        second = await client.get_hero_item_popularity(hero_id=1)
-        await client.get_hero_item_popularity(hero_id=2)
+        first = await client._get_hero_item_popularity(hero_id=1)
+        second = await client._get_hero_item_popularity(hero_id=1)
+        await client._get_hero_item_popularity(hero_id=2)
 
     assert first is second
     assert sorted(calls) == [
@@ -680,7 +672,7 @@ async def test_concurrent_calls_for_one_hero_share_one_request():
         client._get = AsyncMock(side_effect=_popularity_get(calls, delay=0.01))
 
         results = await asyncio.gather(
-            *(client.get_hero_item_popularity(hero_id=1) for _ in range(5))
+            *(client._get_hero_item_popularity(hero_id=1) for _ in range(5))
         )
 
     assert calls.count("/heroes/1/itemPopularity") == 1
@@ -699,7 +691,7 @@ async def test_different_heroes_fetch_in_parallel_not_in_series():
 
         await asyncio.gather(
             *(
-                client.get_hero_item_popularity(hero_id=hero_id)
+                client._get_hero_item_popularity(hero_id=hero_id)
                 for hero_id in range(1, 6)
             )
         )
@@ -723,6 +715,6 @@ async def test_unknown_hero_item_popularity_is_empty_not_an_error():
     async with OpenDotaAsyncClient() as client:
         client._get = AsyncMock(side_effect=fake_get)
 
-        popularity = await client.get_hero_item_popularity(hero_id=99999)
+        popularity = await client._get_hero_item_popularity(hero_id=99999)
 
     assert popularity.is_empty

@@ -68,12 +68,12 @@ async def test_hero_get_stats_delegates_to_active_client():
     hero = _hero(hero_id=5)
 
     async with OpenDotaAsyncClient() as client:
-        client.get_hero_stat = AsyncMock(return_value="sentinel")
+        client._get_hero_stat = AsyncMock(return_value="sentinel")
 
         result = await hero.get_stats()
 
     assert result == "sentinel"
-    client.get_hero_stat.assert_awaited_once_with(hero_id=5)
+    client._get_hero_stat.assert_awaited_once_with(hero_id=5)
 
 
 @pytest.mark.asyncio
@@ -151,9 +151,9 @@ async def test_hero_get_item_popularity_delegates_to_active_client():
     hero = _hero(hero_id=5)
 
     async with OpenDotaAsyncClient() as client:
-        client.get_hero_item_popularity = AsyncMock(return_value="sentinel")
+        client._get_hero_item_popularity = AsyncMock(return_value="sentinel")
 
         result = await hero.get_item_popularity()
 
     assert result == "sentinel"
-    client.get_hero_item_popularity.assert_awaited_once_with(hero_id=5)
+    client._get_hero_item_popularity.assert_awaited_once_with(hero_id=5)
