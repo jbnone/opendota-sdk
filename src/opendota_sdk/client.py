@@ -15,6 +15,7 @@ from opendota_sdk.http._retry import RetryPolicy
 from opendota_sdk.http._transport import AsyncHTTPTransport
 from opendota_sdk.models import (
     Hero,
+    HeroBenchmarks,
     HeroItemPopularity,
     HeroMatchups,
     HeroStats,
@@ -114,6 +115,8 @@ class OpenDotaAsyncClient:
         self._hero_item_popularity_locks: dict[int, asyncio.Lock] = {}
         self._hero_matchups_cache: dict[int, HeroMatchups] = {}
         self._hero_matchups_locks: dict[int, asyncio.Lock] = {}
+        self._hero_benchmarks_cache: dict[int, HeroBenchmarks] = {}
+        self._hero_benchmarks_locks: dict[int, asyncio.Lock] = {}
 
     async def _get(
         self,
@@ -410,6 +413,51 @@ class OpenDotaAsyncClient:
                 logger.debug(
                     "Loaded %d matchups for hero %d in %.2fs; cached on client",
                     len(cached.matchups),
+                    hero_id,
+                    time.perf_counter() - started,
+                )
+
+        return cached
+
+    async def _get_hero_benchmarks(self, *, hero_id: int) -> HeroBenchmarks:
+        """Fetch a hero's benchmarks; the fetch behind `Hero.get_benchmarks()`.
+
+        Private per AGENTS.md §3.6: callers reach it through `Hero.get_benchmarks()`.
+        Fetches `/benchmarks?hero_id={hero_id}` unfiltered; nothing else is joined. See
+        `HeroBenchmarks` for what the values measure.
+
+        Cached per hero: concurrent calls for the same hero share one request, and calls
+        for different heroes run in parallel.
+
+        Args:
+            hero_id: Numeric hero id.
+
+        Returns:
+            The hero's benchmarks. OpenDota answers an unknown hero id with null values
+            rather than an error, so check `HeroBenchmarks.is_empty`.
+
+        Raises:
+            OpenDotaError: If the request fails or the payload is malformed.
+        """
+        cached = self._hero_benchmarks_cache.get(hero_id)
+        if cached is not None:
+            return cached
+
+        # Get-or-create with no await in between, so racing tasks share one lock.
+        lock = self._hero_benchmarks_locks.get(hero_id)
+        if lock is None:
+            lock = self._hero_benchmarks_locks[hero_id] = asyncio.Lock()
+
+        async with lock:
+            cached = self._hero_benchmarks_cache.get(hero_id)
+            if cached is None:
+                started = time.perf_counter()
+                raw = await self._get("/benchmarks", params={"hero_id": hero_id})
+                cached = self._assembler.normalize_hero_benchmarks(raw, hero_id=hero_id)
+                self._hero_benchmarks_cache[hero_id] = cached
+                logger.debug(
+                    "Loaded %d benchmark metrics for hero %d in %.2fs; cached on client",
+                    len(cached.metrics),
                     hero_id,
                     time.perf_counter() - started,
                 )

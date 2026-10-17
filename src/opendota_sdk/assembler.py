@@ -8,6 +8,7 @@ from typing import Any, TypeVar
 from opendota_sdk._errors import OpenDotaError
 from opendota_sdk._records import ItemRecord
 from opendota_sdk.enums import (
+    BenchmarkMetric,
     HeroAttackType,
     HeroPrimaryAttribute,
     HeroRole,
@@ -16,10 +17,13 @@ from opendota_sdk.enums import (
 from opendota_sdk.models import (
     AbilityBehavior,
     Attribute,
+    BenchmarkPoint,
     DamageType,
     Dispellable,
     Hero,
     HeroAbility,
+    HeroBenchmark,
+    HeroBenchmarks,
     HeroBracketStats,
     HeroItemPopularity,
     HeroMatchup,
@@ -406,6 +410,76 @@ class Assembler:
         return HeroMatchups(
             hero_id=hero_id, matchups=matchups, raw=[dict(e) for e in raw]
         )
+
+    def normalize_hero_benchmarks(self, raw: Any, *, hero_id: int) -> HeroBenchmarks:
+        """Build a HeroBenchmarks model from a `/benchmarks` payload.
+
+        Points are sorted by ascending percentile. A `null` value becomes `None`, never
+        zero. Metric keys with no `BenchmarkMetric` member are kept under their plain
+        string and reported once at DEBUG, so a new metric is noticed.
+
+        Args:
+            raw: The `/benchmarks?hero_id=...` payload.
+            hero_id: The hero the payload was fetched for.
+
+        Returns:
+            The assembled benchmarks.
+
+        Raises:
+            OpenDotaError: If the payload has no `result` object, a metric is not a list,
+                or a point has no numeric `percentile` or a non-numeric `value`.
+        """
+        result = raw.get("result") if isinstance(raw, dict) else None
+        if not isinstance(result, dict):
+            raise OpenDotaError(
+                f"Cannot build HeroBenchmarks for hero {hero_id}: expected an object "
+                f"with a 'result' object, got {type(raw).__name__}"
+            )
+
+        metrics: dict[BenchmarkMetric | str, HeroBenchmark] = {}
+        unknown: list[str] = []
+        for key, entries in result.items():
+            if not isinstance(entries, list):
+                raise OpenDotaError(
+                    f"Cannot build HeroBenchmarks for hero {hero_id}: metric {key!r} "
+                    f"is {type(entries).__name__}, expected a list"
+                )
+            points: list[BenchmarkPoint] = []
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    raise OpenDotaError(
+                        f"Cannot build HeroBenchmarks for hero {hero_id}: metric "
+                        f"{key!r} has an unusable point: {entry!r}"
+                    )
+                percentile = self._normalize_float(entry.get("percentile"))
+                value = self._normalize_float(entry.get("value"))
+                if percentile is None or (
+                    value is None and entry.get("value") is not None
+                ):
+                    raise OpenDotaError(
+                        f"Cannot build HeroBenchmarks for hero {hero_id}: metric "
+                        f"{key!r} has an unusable point: {entry!r}"
+                    )
+                points.append(BenchmarkPoint(percentile=percentile, value=value))
+            points.sort(key=lambda point: point.percentile)
+            metric: BenchmarkMetric | str
+            try:
+                metric = BenchmarkMetric(key)
+            except ValueError:
+                metric = key
+                unknown.append(key)
+            metrics[metric] = HeroBenchmark(metric=metric, points=points)
+
+        if unknown:
+            logger.debug(
+                "Benchmarks for hero %d include %d metric(s) with no BenchmarkMetric "
+                "member (%s); keeping them under their plain keys",
+                hero_id,
+                len(unknown),
+                ", ".join(sorted(unknown)),
+            )
+
+        return HeroBenchmarks(hero_id=hero_id, metrics=metrics, raw=dict(raw))
 
     def _normalize_brackets(self, raw: dict[str, Any]) -> list[HeroBracketStats]:
         """Fold the flat `{bracket}_pick`/`{bracket}_win` keys into typed entries."""
