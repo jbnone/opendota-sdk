@@ -113,7 +113,7 @@ Sections, in this order:
   accepts, such as a collection with no single entity to hang on.
 - **Example.** How a caller would use it, in at most 12 lines of Python.
   Work inside `async with OpenDotaAsyncClient() as client:`, reach the entity
-  the way callers do today (`await client.get_hero(hero_name=...)`), then use
+  the way callers do today (`await client.get_hero(HeroName.ANTI_MAGE)`), then use
   the new method and one or two of the fields or properties it returns.
   Use only existing API plus the proposed surface, so the snippet runs as
   written once the issue is built.
