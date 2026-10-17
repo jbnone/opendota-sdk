@@ -6,13 +6,13 @@ responses with [dotaconstants](https://github.com/odota/dotaconstants) data so y
 have to.
 
 ```python
-from opendota_sdk import OpenDotaAsyncClient
+from opendota_sdk import HeroName, OpenDotaAsyncClient
 
 async with OpenDotaAsyncClient() as client:
     heroes = await client.get_heroes()
     items = await client.get_items()
 
-    hero = await client.get_hero(hero_name="npc_dota_hero_antimage")
+    hero = await client.get_hero(HeroName.ANTI_MAGE)
     stats = await hero.get_stats()
 ```
 

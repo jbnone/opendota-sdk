@@ -10,6 +10,7 @@ from opendota_sdk._errors import OpenDotaError
 from opendota_sdk.client import OpenDotaAsyncClient
 from opendota_sdk.enums import (
     HeroAttackType,
+    HeroName,
     HeroPrimaryAttribute,
     HeroRole,
     HeroSkillBracket,
@@ -228,6 +229,30 @@ async def test_get_hero_by_name_returns_matching_hero():
 
 
 @pytest.mark.asyncio
+async def test_get_hero_accepts_a_hero_name_member_positionally():
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(side_effect=_antimage_side_effect())
+
+        hero = await client.get_hero(HeroName.ANTI_MAGE)
+
+    assert isinstance(hero, Hero)
+    assert hero.id == 1
+    assert hero.name == HeroName.ANTI_MAGE
+
+
+@pytest.mark.asyncio
+async def test_get_hero_accepts_an_internal_name_string_positionally():
+    # Heroes newer than HeroName can still be looked up by their internal name.
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(side_effect=_antimage_side_effect())
+
+        hero = await client.get_hero("npc_dota_hero_antimage")
+
+    assert isinstance(hero, Hero)
+    assert hero.id == 1
+
+
+@pytest.mark.asyncio
 async def test_get_hero_not_found_returns_none():
     async with OpenDotaAsyncClient() as client:
         client._get = AsyncMock(side_effect=_antimage_side_effect())
@@ -256,6 +281,9 @@ async def test_get_hero_requires_exactly_one_lookup_key():
 
         with pytest.raises(ValueError, match="Provide either hero_id or hero_name"):
             await client.get_hero(hero_id=1, hero_name="npc_dota_hero_antimage")
+
+        with pytest.raises(ValueError, match="Provide either hero_id or hero_name"):
+            await client.get_hero(HeroName.ANTI_MAGE, hero_id=1)
 
 
 _BLINK_ITEMS_DATA = {"blink": {"id": 1, "dname": "Blink Dagger", "cost": 2250}}
