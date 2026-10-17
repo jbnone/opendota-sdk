@@ -32,4 +32,11 @@ async def main():
 asyncio.run(main())
 ```
 
+Output (live data, so the numbers drift with the patch):
+
+```text
+Anti-Mage 51.1%
+Storm Spirit
+```
+
 Docs: **https://jbnone.github.io/opendota-sdk/**
