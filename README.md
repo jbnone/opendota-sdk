@@ -17,4 +17,19 @@ Build better Dota 2 tools with the OpenDota SDK, providing enhanced access to [O
 pip install opendota-sdk
 ```
 
+```python
+import asyncio
+from opendota_sdk import OpenDotaAsyncClient
+
+async def main():
+    async with OpenDotaAsyncClient() as client:
+        hero = await client.get_hero(hero_name="npc_dota_hero_antimage")
+        stats = await hero.get_stats()
+        matchups = await hero.get_matchups()
+        print(hero.localized_name, f"{stats.pub_win_rate:.1%}")
+        print(matchups.matchups[0].hero.localized_name)
+
+asyncio.run(main())
+```
+
 Docs: **https://jbnone.github.io/opendota-sdk/**
