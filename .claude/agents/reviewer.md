@@ -66,7 +66,10 @@ the source the claim came from.
    uv run ty check
    ```
 
-   Report any failure verbatim.
+   Report any failure verbatim. A failure in a file the PR touches is a
+   blocking finding, whatever the PR body or the author's comment calls it.
+   `ruff format --check` covers the Python code blocks in Markdown files too,
+   so a README or docs example counts.
 5. **Docstrings (§10.4).** Google style, `Attributes:` in field order,
    `Args:`/`Returns:`/`Raises:` complete, contracts stated (`None` when...),
    single backticks.
