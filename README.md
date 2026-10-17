@@ -21,6 +21,7 @@ pip install opendota-sdk
 import asyncio
 from opendota_sdk import HeroName, OpenDotaAsyncClient
 
+
 async def main():
     async with OpenDotaAsyncClient() as client:
         hero = await client.get_hero(HeroName.ANTI_MAGE)
@@ -28,6 +29,7 @@ async def main():
         matchups = await hero.get_matchups()
         print(hero.localized_name, f"{stats.pub_win_rate:.1%}")
         print(matchups.matchups[0].hero.localized_name)
+
 
 asyncio.run(main())
 ```
