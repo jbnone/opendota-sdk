@@ -13,6 +13,7 @@ from opendota_sdk._errors import (
 )
 from opendota_sdk.client import OpenDotaAsyncClient
 from opendota_sdk.enums import (
+    BenchmarkMetric,
     HeroAttackType,
     HeroName,
     HeroPrimaryAttribute,
@@ -22,10 +23,13 @@ from opendota_sdk.enums import (
 from opendota_sdk.models import (
     AbilityBehavior,
     Attribute,
+    BenchmarkPoint,
     DamageType,
     Dispellable,
     Hero,
     HeroAbility,
+    HeroBenchmark,
+    HeroBenchmarks,
     HeroBracketStats,
     HeroItemPopularity,
     HeroMatchup,
@@ -45,12 +49,16 @@ __version__ = version("opendota-sdk")
 __all__ = [
     "AbilityBehavior",
     "Attribute",
+    "BenchmarkMetric",
+    "BenchmarkPoint",
     "DamageType",
     "Dispellable",
     "HTTPStatusError",
     "Hero",
     "HeroAbility",
     "HeroAttackType",
+    "HeroBenchmark",
+    "HeroBenchmarks",
     "HeroBracketStats",
     "HeroItemPopularity",
     "HeroMatchup",
