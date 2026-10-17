@@ -26,13 +26,13 @@ The project is **not** a thin endpoint wrapper, but it is also **not yet** the f
 The current user-facing entry point is `OpenDotaAsyncClient`.
 
 ```python
-from opendota_sdk import OpenDotaAsyncClient
+from opendota_sdk import HeroName, OpenDotaAsyncClient
 
 async with OpenDotaAsyncClient() as client:
     heroes = await client.get_heroes()
     items = await client.get_items()
 
-    hero = await client.get_hero(hero_name="npc_dota_hero_antimage")
+    hero = await client.get_hero(HeroName.ANTI_MAGE)
     stats = await hero.get_stats()  # relationship method, see §6.2
 ```
 
@@ -173,7 +173,8 @@ Public exports should be limited to stable, user-facing types such as:
 - SDK error types
 - selected user-facing models like `Item`, `Hero`, `HeroStats`, `HeroItemPopularity` (with its
   `PopularItem` entries), and `HeroMatchups` (with its `HeroMatchup` entries), plus the enums they expose
-  (`HeroSkillBracket` is exported because `HeroBracketStats.bracket` hands it to callers)
+  (`HeroSkillBracket` is exported because `HeroBracketStats.bracket` hands it to callers), and
+  `HeroName`, which callers pass to `get_hero()` (§6.1)
 
 The ambient-client helpers in `_context.py` are **not** exported: `active_client()`, `bind_client()`,
 and `unbind_client()` are internal. Users reach them through `async with client` or
@@ -213,7 +214,7 @@ src/opendota_sdk/
 ├── _records.py          # Raw item record boundary before assembly
 ├── assembler.py         # Item, hero, hero-stats, item-popularity, and matchups normalization
 ├── client.py            # OpenDotaAsyncClient (owns all raw fetching and caching)
-├── enums.py             # Hero-related enums and shared enum types
+├── enums.py             # Hero-related enums, shared enum types, and `HeroName` for lookups
 ├── models.py            # Typed Item, Hero, HeroStats, HeroItemPopularity, HeroMatchups models, item enums
 ├── py.typed             # PEP 561 marker; the package ships as typed
 └── http/
@@ -299,6 +300,16 @@ Current shape:
   `title`), `lore: str`, a computed `innate_abilities` property (filters `abilities` by `is_innate` —
   cardinality varies per hero, not always exactly one), and a `raw` field (mirroring `Item.raw`) with
   the full merged payload
+- `HeroName` (`enums.py`) is a `StrEnum` of every hero, so callers write
+  `client.get_hero(HeroName.ANTI_MAGE)` instead of `hero_name="npc_dota_hero_antimage"`.
+  Members are named after the in-game name (apostrophes dropped, other separators become `_`:
+  `NATURES_PROPHET`), and values are the internal names, which often differ (`ZEUS` is
+  `npc_dota_hero_zuus`). Being a `str`, a member equals and hashes as its internal name, so
+  `_heroes_by_name` needs no change and `hero.name == HeroName.ANTI_MAGE` holds. It is a static
+  list mirroring the vendored `heroes.json`, not built from the API at runtime, so type checkers
+  and editors can see the members; `test_hero_name.py` fails, naming the member to add, when
+  the fixture gains a hero. `get_hero()` takes `hero_name` positionally as `HeroName | str`, so
+  a plain string still finds a hero added in a patch newer than the enum
 
 Implications:
 
@@ -393,7 +404,7 @@ Shape and decisions:
   the vendored fixture when this was built.
 - **id only, no `hero_name`.** `get_hero()`/`get_hero_stat()` resolve names for free from bulk
   payloads they hold; this endpoint has none, so a name parameter would hide a five-payload hero
-  fetch behind a lookup. Name holders go `get_hero(hero_name=...)` → `Hero.get_item_popularity()`.
+  fetch behind a lookup. Name holders go `get_hero(HeroName.ANTI_MAGE)` → `Hero.get_item_popularity()`.
 - **per-key caching, the first instance.** `_hero_item_popularity_cache` and
   `_hero_item_popularity_locks` are dicts keyed by hero id. Concurrent calls for one hero collapse to
   one request; different heroes fetch in parallel. A single shared lock would still pass a
@@ -602,6 +613,8 @@ Existing coverage includes:
 - transport behavior
 - item assembly, plus a regression sweep over every real item (`test_items_fixture.py`)
 - hero merge/assembly, plus a regression sweep over every real hero (`test_heroes_fixture.py`)
+- `HeroName` kept in step with the vendored heroes, one member per hero named by the in-game
+  name (`test_hero_name.py`), and `get_hero()` taking it positionally (`test_client.py`)
 - hero stats assembly (bracket folding, win rates, required-field errors)
 - hero item popularity: assembler resolution/sorting/unresolved-id handling (`test_assembler.py`),
   a regression sweep over recorded real payloads (`test_item_popularity_fixture.py`), and
@@ -635,13 +648,19 @@ Use the existing toolchain:
 ```bash
 uv run pytest
 uv run ruff check
+uv run ruff format --check
 uv run ty check
 uv run zizmor .github/workflows   # only when touching workflows (§14)
 ```
 
 For narrower work, run the smallest relevant subset first.
 
-Always run `ruff check` and `ty check` on any file you touch and resolve issues before considering the work done, not just `pytest`. Pre-existing issues in files you did not touch may be left alone but should be called out rather than silently ignored.
+Always run `ruff check`, `ruff format --check`, and `ty check` on any file you touch and resolve issues before considering the work done, not just `pytest`. Pre-existing issues in files you did not touch may be left alone but should be called out rather than silently ignored.
+
+`ruff format` formats the Python code blocks inside Markdown files by default, so `README.md`
+and the `docs/` pages are checked too, and CI's lint job fails on them. A failure in a file the
+change touches is never pre-existing. The README quickstart PR (#97) failed CI three times
+after the developer called its own README edit a pre-existing format issue.
 
 `ruff check` includes the pydocstyle (`D`) rules in Google convention, so a new public
 member without a docstring, or an `Args:` section that omits a parameter, fails lint (§10.4).
@@ -792,6 +811,9 @@ When editing this project, do not introduce instruction drift in these areas:
   0.1.0a8 — verified in `svc/web.ts` and live. Do not move it to `?api_key=` either: the key
   would then sit in every request URL and in `HTTPStatusError.url`/its message. Tests pin the
   exact header on the wire (`test_auth.py`)
+- do not make `get_hero()` accept only `HeroName`, and do not build `HeroName` from the API at
+  runtime. A plain internal-name string must keep working for heroes newer than the enum, and a
+  runtime-built enum is invisible to type checkers and editors, which is the point of it (§6.1)
 - do not add `hero_name` to per-hero endpoints like `get_hero_item_popularity()` "for symmetry",
   and do not collapse their per-hero locks into one shared lock. The first would hide a full hero
   fetch behind a lookup; the second would serialize every hero while still passing a naive
@@ -844,6 +866,9 @@ When editing this project, do not introduce instruction drift in these areas:
   start an implementation. Do not re-add an `environment:` with required reviewers to
   `implement` either: the owner chose the `approved` label as the single start approval,
   and a second click was tried and rejected as friction (§15)
+- do not widen `refine`'s tool rules beyond the issue that triggered it. Every `gh` rule names
+  that issue's number and the triggering comment's id, and only the title and body may be
+  edited, so a steering comment can never reach another issue or a label (§15)
 - do not remove `revise`'s guard step or widen its `if:` beyond the owner's `@claude`
   comment. The action checks out the PR head itself, forks included, so without the guard
   an owner comment on a fork PR would run that fork's code with the job's secrets (§15)
@@ -1076,6 +1101,13 @@ local use.
   owner reads the issue and adds `approved`. The owner chose to build it after one
   end-to-end endpoint run (#80/#87), rather than after all the §12.5 endpoints as an
   earlier version of this section planned.
+- `refine` — the `product` role again, sent back to one of its proposals. Fires when the
+  owner comments `@claude` on an open issue labeled `proposal` and not yet `approved`. The
+  owner's comment is the whole task: the groomer rewrites that issue's body, and its title if
+  the entry point's name changed, re-verifying any data the change touches, then replies
+  once with what it changed. It shares `groom`'s queue. After `approved`, steering moves to
+  the developer's PR through `revise`, so between the two the owner can steer both agents
+  where they work: the groomer on the issue, the developer on the PR.
 
 **Planned, not built:** an on-demand `design` job (the `architect` role, on `needs-design`,
 posting options and a recommendation; the owner then labels `design-approved`). It waits for
@@ -1125,12 +1157,13 @@ the first proposal that needs design, most likely the first issue in a new domai
    installs it only when `allowed_non_write_users` is set, which this workflow never sets,
    so each job has its own "Install subprocess isolation dependencies" step copied from the
    action. The first run with the scrub on failed at startup for exactly this reason.
-6. `groom` cannot execute code: it has no `uv`, no `Bash(uv run:*)`, no git tools, and
-   `contents: read`. It reads the repository, lists and creates issues, and uses the same
-   read-only `curl` forms, plus the bare spec URL. It does read issue and PR titles written by
-   anyone on a public repo, so a prompt injection could at worst produce a bad `proposal`
-   issue, which starts nothing. Do not give it `uv run`, write access to code, or any label
-   but `proposal`.
+6. `groom` and `refine` cannot execute code: they have no `uv`, no `Bash(uv run:*)`, no git
+   tools, and `contents: read`. They read the repository and use the same read-only `curl`
+   forms, plus the bare spec URL. `groom` lists and creates issues; `refine` can read, edit
+   (title and body only), and comment on the one issue that triggered it. `groom` reads issue
+   and PR titles written by anyone on a public repo, and `refine` reads the issue's comments,
+   so a prompt injection could at worst produce a bad `proposal` issue, which starts nothing.
+   Do not give either `uv run`, write access to code, or any label but `proposal`.
 
 Labels: `proposal` (groomer output, nothing runs), `needs-design` (architect, planned),
 `design-approved` and `approved` (implement). The action restores `.claude/` and `CLAUDE.md`

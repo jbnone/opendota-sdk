@@ -14,6 +14,7 @@ from opendota_sdk._errors import (
 from opendota_sdk.client import OpenDotaAsyncClient
 from opendota_sdk.enums import (
     HeroAttackType,
+    HeroName,
     HeroPrimaryAttribute,
     HeroRole,
     HeroSkillBracket,
@@ -54,6 +55,7 @@ __all__ = [
     "HeroItemPopularity",
     "HeroMatchup",
     "HeroMatchups",
+    "HeroName",
     "HeroPrimaryAttribute",
     "HeroRole",
     "HeroSkillBracket",

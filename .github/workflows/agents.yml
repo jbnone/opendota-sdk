@@ -8,6 +8,8 @@
 #      `@claude` there; a guard step refuses anything but this repo's
 #      `claude/` branches before Claude starts. `groom` only proposes: it
 #      opens `proposal` issues, which start nothing until the owner labels them.
+#      `refine` sends the groomer back to one of its proposals when the owner
+#      comments `@claude` there, before the issue is approved.
 #   2. The `protect-main` ruleset requires a pull request, green CI, and an owner
 #      review before anything merges, with no bypass for the Claude app.
 #
@@ -242,6 +244,67 @@ jobs:
           claude_args: |
             --max-turns 50
             --allowedTools "Read,Glob,Grep,Write,Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh pr list:*),Bash(curl -sS https://api.opendota.com/api),Bash(curl -sS https://api.opendota.com/api/*),Bash(curl -sS https://raw.githubusercontent.com/odota/*)"
+
+  refine:
+    # The owner's @claude comment on an open proposal that is not approved yet.
+    # Once `approved` is on the issue, steering moves to the developer's PR.
+    if: >-
+      github.event_name == 'issue_comment' &&
+      !github.event.issue.pull_request &&
+      github.event.issue.state == 'open' &&
+      github.event.sender.login == 'jbnone' &&
+      contains(github.event.comment.body, '@claude') &&
+      contains(github.event.issue.labels.*.name, 'proposal') &&
+      !contains(github.event.issue.labels.*.name, 'approved')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"  # same reason as `implement`
+    # Shares the groomer's queue, so a refine never races a grooming run.
+    concurrency:
+      group: agents-groom
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write  # edits this one issue's title and body and replies to it
+      id-token: write  # same OIDC-to-app-token exchange as `implement`
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      # No uv and no `uv run`, as in `groom`: refining never executes repository code.
+      - name: Install subprocess isolation dependencies
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends bubblewrap socat && break
+            echo "apt-get attempt $i failed, retrying..."
+            sleep 5
+          done
+          command -v bwrap
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Run the product agent on its own proposal
+        uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Only the issue number and comment id reach the prompt, never the
+          # comment text: the agent reads that itself and checks its author.
+          prompt: |
+            You are the product role for this repository. Read
+            `.claude/agents/product.md` and follow its section "Refining a
+            proposal" for issue #${{ github.event.issue.number }}. The owner's
+            comment to act on has id ${{ github.event.comment.id }}.
+          # Every gh rule names this issue, so no other issue can be read or
+          # changed. The edit rules allow only the body and the title; a label
+          # added anyway would come from claude[bot], and `implement` ignores
+          # labels from anyone but the owner.
+          claude_args: |
+            --max-turns 40
+            --allowedTools "Read,Glob,Grep,Write,Bash(gh issue view ${{ github.event.issue.number }}:*),Bash(gh api repos/jbnone/opendota-sdk/issues/comments/${{ github.event.comment.id }}:*),Bash(gh issue edit ${{ github.event.issue.number }} --body-file:*),Bash(gh issue edit ${{ github.event.issue.number }} --title:*),Bash(gh issue comment ${{ github.event.issue.number }} --body-file:*),Bash(curl -sS https://api.opendota.com/api),Bash(curl -sS https://api.opendota.com/api/*),Bash(curl -sS https://raw.githubusercontent.com/odota/*)"
 
   review:
     if: >-

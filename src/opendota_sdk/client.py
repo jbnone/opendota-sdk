@@ -9,6 +9,7 @@ from typing import Any, Self
 from opendota_sdk._config import OpenDotaClientConfig
 from opendota_sdk._context import bind_client, unbind_client
 from opendota_sdk.assembler import Assembler
+from opendota_sdk.enums import HeroName
 from opendota_sdk.http._auth import AuthHandler
 from opendota_sdk.http._retry import RetryPolicy
 from opendota_sdk.http._transport import AsyncHTTPTransport
@@ -38,7 +39,7 @@ class OpenDotaAsyncClient:
     Example:
         ```python
         async with OpenDotaAsyncClient() as client:
-            hero = await client.get_hero(hero_name="npc_dota_hero_antimage")
+            hero = await client.get_hero(HeroName.ANTI_MAGE)
             stats = await hero.get_stats()
         ```
     """
@@ -226,15 +227,18 @@ class OpenDotaAsyncClient:
         return list(self._heroes_cache)
 
     async def get_hero(
-        self, *, hero_id: int | None = None, hero_name: str | None = None
+        self, hero_name: HeroName | str | None = None, *, hero_id: int | None = None
     ) -> Hero | None:
-        """Look up a single hero by id or internal name.
+        """Look up a single hero by name or id.
 
         Populates the hero cache via `get_heroes()` if needed, then resolves from an index.
+        `hero = await client.get_hero(HeroName.ANTI_MAGE)` is the usual form.
 
         Args:
-            hero_id: Numeric hero id.
-            hero_name: Internal hero name (e.g. `"npc_dota_hero_antimage"`).
+            hero_name: The hero, as a `HeroName` member or its internal name string
+                (`"npc_dota_hero_antimage"`). A plain string also covers heroes added in
+                a patch newer than `HeroName`. May be passed positionally.
+            hero_id: Numeric hero id. Keyword-only.
 
         Returns:
             The matching hero, or `None` if no hero has that id or name.
@@ -324,7 +328,7 @@ class OpenDotaAsyncClient:
         for different heroes run in parallel. Unlike `get_hero()` and `get_hero_stat()`,
         this takes an id only -- those resolve a name from a bulk payload they already
         hold, whereas resolving one here would mean fetching every hero first. Callers
-        holding a name can use `get_hero(hero_name=...)` and then
+        holding a hero name can use `get_hero()` and then
         `Hero.get_item_popularity()`.
 
         Args:
@@ -386,7 +390,7 @@ class OpenDotaAsyncClient:
         Cached per hero: concurrent calls for the same hero share one request, and calls
         for different heroes run in parallel. Takes an id only, for the same reason as
         `get_hero_item_popularity()`. Callers holding a name can use
-        `get_hero(hero_name=...)` and then `Hero.get_matchups()`.
+        `get_hero()` and then `Hero.get_matchups()`.
 
         Args:
             hero_id: Numeric hero id.
