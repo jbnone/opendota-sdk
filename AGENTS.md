@@ -890,8 +890,9 @@ When editing this project, do not introduce instruction drift in these areas:
 - do not add a public client method for an endpoint about one modeled entity when a method on
   that model is its natural entry point; the client method that owns the fetch is private
   (§3.6)
-- do not propose an endpoint whose result is an entity the SDK does not model yet, such as
-  `Hero.get_players()` returning bare account ids before a players domain exists (§12.1)
+- do not propose a surface that returns bare ids for an entity the SDK does not model, such
+  as `Hero.get_players()` returning account ids; a proposal that needs a new entity designs
+  its model (§12.1)
 - do not propose or build pro-scene endpoints (`/proMatches`, `/proPlayers`, `/teams/*`,
   `/leagues/*`) or endpoints that expose OpenDota's machinery rather than Dota data
   (`/explorer`, `/schema`, `/health`, `/metadata`, `/request/*`,
@@ -965,8 +966,9 @@ If the implementation changes materially, update this file in the same work.
 
 ### 12.1 What New Work May Target
 
-This is the scope the `product-groomer` role (§15) proposes from. It is the owner's to change, and
-nothing outside it is proposed until the owner moves it here. Who the SDK is for: Python
+This is the scope the `product-groomer` role (§15) proposes from. It is the owner's to change.
+The groomer has three sources, all bounded by the out-of-scope list below: the decided list,
+a consumer's point of view, and technical work. Who the SDK is for: Python
 developers building Dota 2 tools (README). It earns its place by returning typed, joined
 objects instead of raw JSON (§1, §3.3), so new work is worth proposing when it gives a caller
 data they would otherwise fetch and join by hand.
@@ -975,11 +977,11 @@ The universe of endpoints is OpenDota's OpenAPI spec at `https://api.opendota.co
 paths in October 2026. The SDK covers `/heroes`, `/heroStats`, `/heroes/{id}/itemPopularity`,
 `/heroes/{id}/matchups`, and the five `/constants/*` files the hero and item flows join.
 
-**Only build on what exists.** A proposal may use only entities the SDK already models. An
-endpoint whose natural result is an entity the SDK does not model yet waits for that domain,
-however easy it looks: `/heroes/{id}/players` returns player account ids, so it waits for the
-players domain rather than shipping bare ids as `Hero.get_players()`. Prefer work that
-completes or hardens what exists over work that starts something new.
+**Model what you return.** A proposal never hands callers bare ids for an entity the SDK
+does not model: `/heroes/{id}/players` returns player account ids, so `Hero.get_players()`
+returning them as ints is the wrong shape however easy it looks. A proposal that needs a new
+entity designs its model too, which makes it new-domain work. When two candidates serve
+consumers equally, prefer the one that completes or hardens what exists.
 
 **Decided**, proposed in this order, one issue each:
 
@@ -992,8 +994,20 @@ completes or hardens what exists over work that starts something new.
    `X-Rate-Limit-Remaining-Minute` (§8.2), and an explicit refresh or TTL for cached
    results (§2.3)
 
-**Technical and maintenance work** may be proposed alongside the list above, at most one issue
-per run so domain work is not crowded out. Each needs evidence in the repository, not taste:
+**From the consumer's point of view**, up to two proposals per run may come from what a
+Python developer building a Dota 2 tool needs, whether or not the decided list names it. The
+owner chose in October 2026 not to limit the groomer to the decided list, which only says what
+the owner already thought of. A consumer-driven proposal may reach anything not out of
+scope, including the areas below that are not on the decided list, but it must be grounded:
+it names the tool its consumer is building, shows the code they write today with only the
+existing API, and quotes the SDK lines that force the workaround, or verifies the data it
+adds like any endpoint (§6.3). Taste is not evidence. A proposal that opens a new domain
+proposes the smallest useful end-to-end slice (one endpoint, its model, its entry point, in
+the §5/§6 shape) and says in its open questions that it opens a domain, so the owner decides
+whether it goes ahead, gets steered, or needs design first.
+
+**Technical and maintenance work** may be proposed alongside the sources above, at most one
+issue per run so domain work is not crowded out. Each needs evidence in the repository, not taste:
 
 - this file disagreeing with the code, such as a stale count, a renamed function, or a rule
   the code breaks
@@ -1018,18 +1032,19 @@ Not technical work for the groomer: dependency bumps (Renovate owns them), chang
   a query language or a job queue
 - live games: `/live`
 
-**Not decided.** Do not propose these until the owner moves them into the decided list:
+**Not on the decided list.** The owner has not put these in order, so they reach the groomer
+only as consumer-driven proposals, never as decided work:
 
 - the next domain after heroes: players (`/players/*`, 14 read endpoints, plus
   `/heroes/{id}/players`) or matches (`/matches/{id}`, `/publicMatches`, `/parsedMatches`,
-  `/heroes/{id}/matches`). Each brings a new domain model, so the first issue in either is a
-  design question (§10.1), not an endpoint
+  `/heroes/{id}/matches`). Each brings a new domain model, so the first issue in either
+  designs that model (§10.1) rather than adding an endpoint to `Hero`
 - the domain-oriented long tail: `/search`, `/findMatches`, `/scenarios/*`,
   `/distributions`, `/rankings`, `/records/{field}`, and `/topPlayers`
 - constants beyond the five files the SDK joins today
 
-When every decided item has an issue, open or closed, the groomer proposes nothing and says
-so in its run log. That is the signal for the owner to decide the next domain.
+When every decided item has an issue, open or closed, the groomer proposes only
+consumer-driven and technical work, and says so in its run log.
 
 ---
 
@@ -1184,12 +1199,14 @@ and split the file so each agent's workflow can be read on its own.
   anything; the developer's push, made with the Claude app's token, does, and that new
   `synchronize` event reviews the new commit.
 - `propose-issues` — the product-groomer. Runs every Monday at 07:00 UTC, and on demand
-  from the Actions tab (`workflow_dispatch`, owner only). It proposes from §12.1 only:
-  domain work that builds on entities the SDK already models, and at most one technical or
-  maintenance issue per run backed by quoted evidence. It verifies each domain candidate's
-  payload live and its population in OpenDota's source, and opens at most three issues
-  labeled `proposal`, each with a usage example of the proposed surface and a design-level
-  plan. It creates nothing while three proposals are waiting for the owner. A `proposal`
+  from the Actions tab (`workflow_dispatch`, owner only). It proposes from §12.1's three
+  sources: the decided list, up to two consumer-driven issues per run (what a developer
+  building a Dota 2 tool needs, shown as the code they write today, reaching anything not
+  out of scope), and at most one technical or maintenance issue backed by quoted evidence.
+  It verifies every candidate that adds data live and its population in OpenDota's source,
+  and opens at most three issues labeled `proposal`, each with a usage example of the
+  proposed surface and a design-level plan. The owner widened it from the decided list
+  alone in October 2026. It creates nothing while three proposals are waiting for the owner. A `proposal`
   label starts nothing; the owner reads the issue and adds `approved`. The owner chose to
   build it after one end-to-end endpoint run (#80/#87), rather than after all the §12.5
   endpoints as an earlier version of this section planned.
