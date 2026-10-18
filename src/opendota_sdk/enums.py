@@ -54,6 +54,28 @@ class HeroPrimaryAttribute(StrEnum):
     ALL = "all"
 
 
+class BenchmarkMetric(StrEnum):
+    """A per-hero statistic that `/benchmarks` reports percentile curves for.
+
+    Members are named in full (`GOLD_PER_MINUTE`), while values are the keys OpenDota
+    uses (`"gold_per_min"`), so a member equals and hashes as its key, as `HeroName`
+    does. Pass a member to `HeroBenchmarks.get()`. The members mirror the keys of the
+    recorded payload; a metric OpenDota adds later is still reachable by its plain key
+    as a string until this enum gains a member for it.
+    """
+
+    GOLD_PER_MINUTE = "gold_per_min"
+    EXPERIENCE_PER_MINUTE = "xp_per_min"
+    KILLS_PER_MINUTE = "kills_per_min"
+    DEATHS_PER_MINUTE = "deaths_per_min"
+    ASSISTS_PER_MINUTE = "assists_per_min"
+    LAST_HITS_PER_MINUTE = "last_hits_per_min"
+    DENIES_PER_MINUTE = "denies_per_min"
+    HERO_DAMAGE_PER_MINUTE = "hero_damage_per_min"
+    HERO_HEALING_PER_MINUTE = "hero_healing_per_min"
+    TOWER_DAMAGE = "tower_damage"
+
+
 class HeroName(StrEnum):
     """Every hero's internal name, so lookups don't need the raw `npc_dota_hero_*` string.
 

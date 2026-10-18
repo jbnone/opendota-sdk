@@ -6,12 +6,14 @@ retained on `raw` for the top-level models (`Item`, `Hero`, `HeroStats`,
 `HeroItemPopularity`).
 """
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
 from opendota_sdk._context import active_client
 from opendota_sdk.enums import (
+    BenchmarkMetric,
     HeroAttackType,
     HeroPrimaryAttribute,
     HeroRole,
@@ -398,6 +400,100 @@ class HeroMatchups:
 
 
 @dataclass(frozen=True)
+class BenchmarkPoint:
+    """One point on a benchmark curve.
+
+    Attributes:
+        percentile: The fraction of sampled players at or below `value`, between 0 and 1.
+        value: The statistic at that percentile, or `None` when OpenDota has no samples.
+    """
+
+    percentile: float
+    value: float | None
+
+
+@dataclass(frozen=True)
+class HeroBenchmark:
+    """The percentile curve of one statistic for one hero.
+
+    Attributes:
+        metric: Which statistic this is. A key OpenDota reports that `BenchmarkMetric`
+            has no member for is kept as its plain `str`.
+        points: The curve, sorted by ascending percentile.
+    """
+
+    metric: BenchmarkMetric | str
+    points: list[BenchmarkPoint] = field(default_factory=list)
+
+    def value_at(self, percentile: float) -> float | None:
+        """Look up the statistic at one of the reported percentiles.
+
+        OpenDota reports 0.1 through 0.9 in steps of 0.1, plus 0.95 and 0.99.
+
+        Args:
+            percentile: A fraction between 0 and 1, such as `0.5` for the median.
+
+        Returns:
+            The value, or `None` when that percentile is not reported or has no samples.
+        """
+        for point in self.points:
+            if math.isclose(point.percentile, percentile):
+                return point.value
+        return None
+
+
+@dataclass(frozen=True)
+class HeroBenchmarks:
+    """A hero's percentile curves, from `/benchmarks?hero_id={hero_id}`.
+
+    Each value is a sample quantile of recently parsed players on this hero, not an
+    all-time average as OpenDota's docs suggest. OpenDota's source samples only a
+    fraction of matches (by `match_id`) and reads a rolling window: the previous
+    retention epoch, falling back to the current one when that is empty. Turbo matches
+    are sampled too, but into separate sets that this endpoint never reads, so the
+    curve covers significant non-turbo matches only. This is the unfiltered curve; the
+    endpoint's `bracket` and `role` filters are not exposed.
+
+    Attributes:
+        hero_id: Numeric hero id, matching `Hero.id`.
+        metrics: One curve per statistic, keyed by `BenchmarkMetric` (or the plain key
+            for a metric the enum does not know). Use `get()` to look one up.
+        raw: The original payload, as returned by the endpoint.
+    """
+
+    hero_id: int
+    metrics: dict[BenchmarkMetric | str, HeroBenchmark] = field(default_factory=dict)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
+
+    def get(self, metric: BenchmarkMetric | str) -> HeroBenchmark | None:
+        """Look up one statistic's curve.
+
+        Args:
+            metric: A `BenchmarkMetric` member, or the plain key OpenDota uses.
+
+        Returns:
+            The curve, or `None` when OpenDota did not report that metric.
+        """
+        return self.metrics.get(metric)
+
+    @property
+    def is_empty(self) -> bool:
+        """Whether OpenDota had no samples for this hero.
+
+        OpenDota answers an unknown hero id with HTTP 200, every metric present, and every
+        value `null`. This is the way to tell that nothing came back.
+
+        Returns:
+            `True` when no metric has a single non-`None` value.
+        """
+        return all(
+            point.value is None
+            for benchmark in self.metrics.values()
+            for point in benchmark.points
+        )
+
+
+@dataclass(frozen=True)
 class HeroStats:
     """Live aggregate pick/win statistics for a hero, from `/heroStats`.
 
@@ -616,6 +712,22 @@ class Hero:
                 `async with OpenDotaAsyncClient()` and without `client.activate()`.
         """
         return await active_client()._get_hero_matchups(hero_id=self.id)
+
+    async def get_benchmarks(self) -> HeroBenchmarks:
+        """Fetch this hero's percentile curves for GPM, XPM, last hits and more.
+
+        Uses the client bound to the current context. Like `get_matchups()`, this is a
+        per-hero endpoint: gathering it over every hero costs one request per hero, and
+        repeat calls for the same hero are served from that client's cache.
+
+        Returns:
+            The hero's benchmarks, unfiltered by bracket or role.
+
+        Raises:
+            OpenDotaError: If no client is active, i.e. this is called outside
+                `async with OpenDotaAsyncClient()` and without `client.activate()`.
+        """
+        return await active_client()._get_hero_benchmarks(hero_id=self.id)
 
     def as_dict(self) -> dict[str, Any]:
         """Return a copy of the raw merged payload this hero was assembled from.
