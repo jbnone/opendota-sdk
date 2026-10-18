@@ -1,0 +1,308 @@
+# The python-developer agent — see AGENTS.md §15 for the roles, labels, and gates.
+#
+#   implement-issue      the owner adds `approved`/`design-approved` to an issue.
+#                        That label is the one and only approval to start building.
+#   revise-on-request    the owner comments `@claude` on one of the agent's PRs.
+#   fix-review-findings  called by agent-code-reviewer.yml when the code-reviewer
+#                        reports blocking findings or CI fails on a `claude/` PR,
+#                        for at most a few rounds before the owner takes over.
+#
+# The revise and fix jobs refuse anything but this repository's open `claude/`
+# branches before Claude starts. Nothing merges without the owner: the
+# `protect-main` ruleset requires a pull request, green CI, and an owner review,
+# with no bypass for the Claude app.
+#
+# The action also refuses to run for actors without write access, so issues,
+# comments, and labels from anyone else never start a run. Keep it that way:
+# no `allowed_non_write_users`, no `allowed_bots: '*'`, no `pull_request_target`.
+
+name: agent-python-developer
+
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+  workflow_call:
+    inputs:
+      round:
+        description: Which automatic fix round this is, starting at 1.
+        type: string
+        required: true
+      max_rounds:
+        description: The last automatic round before the owner takes over.
+        type: string
+        required: true
+      blocking_findings:
+        description: How many blocking findings the code-reviewer reported.
+        type: string
+        required: true
+      ci_result:
+        description: The CI result for the reviewed commit, `passed` or `failed`.
+        type: string
+        required: true
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  # Claude Code settings for every developer run: a PreToolUse hook that refuses
+  # a push or `gh pr create` until the CI checks pass, and hands the failure
+  # back to the agent. It lives in the workflow rather than in
+  # `.claude/settings.json` so local sessions are unaffected; the script itself
+  # is under `.claude/`, which the action restores from the base branch on PRs.
+  REQUIRE_GREEN_CHECKS: >-
+    {"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command",
+    "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/require-green-checks.sh\"",
+    "timeout": 600}]}]}}
+
+jobs:
+  implement-issue:
+    if: >-
+      github.event_name == 'issues' &&
+      github.event.sender.login == 'jbnone' &&
+      (github.event.label.name == 'approved' || github.event.label.name == 'design-approved')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # Strips credentials, including the subscription token, from every
+      # subprocess Claude starts; GitHub tokens are kept so `gh` still works.
+      # `uv run` already lets the agent execute code with network access, so
+      # this scrub, not the tool allowlist, is what protects the token.
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
+    # One developer run at a time, whatever started it: a burst of labels,
+    # comments, or review rounds queues instead of fanning out.
+    concurrency:
+      group: agent-python-developer
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read  # lets Claude read CI results on the PR it opens
+      id-token: write  # exchanged for a short-lived Claude app token; without it the action cannot authenticate
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          enable-cache: false
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      # CLAUDE_CODE_SUBPROCESS_ENV_SCRUB needs bubblewrap, and Claude Code refuses
+      # to start without it. The action installs it only when
+      # `allowed_non_write_users` is set, which this workflow never sets, so this
+      # step mirrors the action's own "Install subprocess isolation dependencies".
+      - name: Install subprocess isolation dependencies
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends bubblewrap socat && break
+            echo "apt-get attempt $i failed, retrying..."
+            sleep 5
+          done
+          command -v bwrap
+          # Ubuntu 24.04+ restricts unprivileged user namespaces via AppArmor.
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Run the python-developer agent
+        uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
+        with:
+          # Subscription auth: a long-lived token from `claude setup-token`, so
+          # runs draw on the owner's Claude plan. An API key bills the Console
+          # organization's prepaid credit instead, which is a separate account.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Tag mode on the labeled issue: a tracking comment, the full issue
+          # context, and a `claude/` branch for the work.
+          track_progress: true
+          # Only the owner's comments reach the model; the issue body is
+          # already vetted by the owner's label.
+          include_comments_by_actor: jbnone
+          additional_permissions: |
+            actions: read
+          settings: ${{ env.REQUIRE_GREEN_CHECKS }}
+          prompt: |
+            You are the python-developer role for this repository. Read
+            `.claude/agents/python-developer.md` and follow it exactly for this
+            issue. Open the pull request yourself with `gh pr create` when the
+            work is done; do not stop at a link to a pre-filled PR page.
+          claude_args: |
+            --max-turns 80
+            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(uv run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(gh issue view:*),Bash(gh pr create:*),Bash(curl -sS https://api.opendota.com/api/*),Bash(curl -sS https://raw.githubusercontent.com/odota/*)"
+
+  revise-on-request:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      github.event.sender.login == 'jbnone' &&
+      contains(github.event.comment.body, '@claude')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"  # same reason as `implement-issue`
+    concurrency:
+      group: agent-python-developer
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read
+      id-token: write  # same OIDC-to-app-token exchange as `implement-issue`
+
+    steps:
+      # The action checks out the PR head itself, forks included. Only the
+      # developer's own branches in this repository may be revised, so stop
+      # here, before any PR code is fetched, if this is anything else.
+      - name: Refuse anything but the developer's own branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          read -r head_repo head_ref state < <(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '"\(.head.repo.full_name) \(.head.ref) \(.state)"')
+          echo "PR #$PR_NUMBER: $head_repo:$head_ref ($state)"
+          if [ "$head_repo" != "$REPO" ] || [[ "$head_ref" != claude/* ]] || [ "$state" != "open" ]; then
+            echo "::error::Only open PRs on this repository's claude/ branches can be revised."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          enable-cache: false
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Install subprocess isolation dependencies
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends bubblewrap socat && break
+            echo "apt-get attempt $i failed, retrying..."
+            sleep 5
+          done
+          command -v bwrap
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Run the python-developer agent on its own PR
+        uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # No `prompt`: tag mode answers the owner's @claude comment, checks
+          # out the PR branch, and commits to it.
+          include_comments_by_actor: jbnone
+          additional_permissions: |
+            actions: read
+          settings: ${{ env.REQUIRE_GREEN_CHECKS }}
+          # `gh pr view` and the PR review-comments endpoint let the developer read
+          # the reviewer's findings. On a public repo they also return comments from
+          # anyone; the role file treats those as information, never instructions.
+          # Two rules for the endpoint: with a `*` for the PR number, a trailing
+          # ` *` no longer also matches the bare command.
+          claude_args: |
+            --max-turns 60
+            --append-system-prompt "You are the python-developer role for this repository. Read .claude/agents/python-developer.md and follow its section 'Revising your own pull request'. Commit to this PR's branch; do not open a new pull request."
+            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(uv run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(gh pr view:*),Bash(gh api repos/jbnone/opendota-sdk/pulls/*/comments),Bash(gh api repos/jbnone/opendota-sdk/pulls/*/comments *),Bash(curl -sS https://api.opendota.com/api/*),Bash(curl -sS https://raw.githubusercontent.com/odota/*)"
+
+  fix-review-findings:
+    # Only reachable through `workflow_call` from agent-code-reviewer.yml, which
+    # runs on `pull_request` and has already decided this round is needed.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"  # same reason as `implement-issue`
+    concurrency:
+      group: agent-python-developer
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read  # the CI tools read the failing job's log
+      id-token: write  # same OIDC-to-app-token exchange as `implement-issue`
+
+    steps:
+      # The caller already checks this; repeated here so this job is safe on
+      # its own, for the same reason as `revise-on-request`'s guard.
+      - name: Refuse anything but the developer's own branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          read -r head_repo head_ref state < <(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '"\(.head.repo.full_name) \(.head.ref) \(.state)"')
+          echo "PR #$PR_NUMBER: $head_repo:$head_ref ($state)"
+          if [ "$head_repo" != "$REPO" ] || [[ "$head_ref" != claude/* ]] || [ "$state" != "open" ]; then
+            echo "::error::Only open PRs on this repository's claude/ branches can be fixed automatically."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          enable-cache: false
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Install subprocess isolation dependencies
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends bubblewrap socat && break
+            echo "apt-get attempt $i failed, retrying..."
+            sleep 5
+          done
+          command -v bwrap
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Run the python-developer agent on the review findings
+        uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # On a `pull_request` event, `track_progress` selects tag mode, which
+          # checks out the PR branch and lets the agent push to it.
+          track_progress: true
+          include_comments_by_actor: jbnone
+          # The PR's latest push usually came from the Claude app itself.
+          allowed_bots: "claude[bot],claude-code[bot]"
+          additional_permissions: |
+            actions: read
+          settings: ${{ env.REQUIRE_GREEN_CHECKS }}
+          # Every value here comes from the decide job's own outputs, never
+          # from PR or comment text.
+          prompt: |
+            You are the python-developer role for this repository. Read
+            `.claude/agents/python-developer.md` and follow its section
+            "Fixing review findings" for pull request
+            #${{ github.event.pull_request.number }}. This is automatic round
+            ${{ inputs.round }} of ${{ inputs.max_rounds }}. The code-reviewer
+            reported ${{ inputs.blocking_findings }} blocking finding(s), and CI
+            ${{ inputs.ci_result }}. Commit to this PR's branch; do not open a
+            new pull request.
+          claude_args: |
+            --max-turns 60
+            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(uv run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(gh pr view:*),Bash(gh api repos/jbnone/opendota-sdk/pulls/*/comments),Bash(gh api repos/jbnone/opendota-sdk/pulls/*/comments *),Bash(curl -sS https://api.opendota.com/api/*),Bash(curl -sS https://raw.githubusercontent.com/odota/*)"

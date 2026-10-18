@@ -890,8 +890,9 @@ When editing this project, do not introduce instruction drift in these areas:
 - do not add a public client method for an endpoint about one modeled entity when a method on
   that model is its natural entry point; the client method that owns the fetch is private
   (§3.6)
-- do not propose an endpoint whose result is an entity the SDK does not model yet, such as
-  `Hero.get_players()` returning bare account ids before a players domain exists (§12.1)
+- do not propose a surface that returns bare ids for an entity the SDK does not model, such
+  as `Hero.get_players()` returning account ids; a proposal that needs a new entity designs
+  its model (§12.1)
 - do not propose or build pro-scene endpoints (`/proMatches`, `/proPlayers`, `/teams/*`,
   `/leagues/*`) or endpoints that expose OpenDota's machinery rather than Dota data
   (`/explorer`, `/schema`, `/health`, `/metadata`, `/request/*`,
@@ -910,18 +911,30 @@ When editing this project, do not introduce instruction drift in these areas:
   produced versions that outrank every real release (§14)
 - do not re-enable the `setup-uv` cache in the workflows; zizmor's cache-poisoning audit
   rejects it because these workflows publish what they build
-- do not loosen the gates in `agents.yml` (§15): no `allowed_non_write_users`, no
-  `allowed_bots: '*'`, no `pull_request_target`, and no `if:` that drops the owner
+- do not loosen the gates in the `agent-*.yml` workflows (§15): no `allowed_non_write_users`,
+  no `allowed_bots: '*'`, no `pull_request_target`, and no `if:` that drops the owner
   `sender.login` check. Each one lets someone other than the owner spend the API budget or
   start an implementation. Do not re-add an `environment:` with required reviewers to
-  `implement` either: the owner chose the `approved` label as the single start approval,
-  and a second click was tried and rejected as friction (§15)
-- do not widen `refine`'s tool rules beyond the issue that triggered it. Every `gh` rule names
-  that issue's number and the triggering comment's id, and only the title and body may be
-  edited, so a steering comment can never reach another issue or a label (§15)
-- do not remove `revise`'s guard step or widen its `if:` beyond the owner's `@claude`
-  comment. The action checks out the PR head itself, forks included, so without the guard
-  an owner comment on a fork PR would run that fork's code with the job's secrets (§15)
+  `implement-issue` either: the owner chose the `approved` label as the single start
+  approval, and a second click was tried and rejected as friction (§15)
+- do not widen `refine-proposal`'s tool rules beyond the issue that triggered it. Every `gh`
+  rule names that issue's number and the triggering comment's id, and only the title and
+  body may be edited, so a steering comment can never reach another issue or a label (§15)
+- do not remove the guard step from `revise-on-request` or `fix-review-findings`, widen
+  `revise-on-request`'s `if:` beyond the owner's `@claude` comment, or let
+  `decide-next-round` send back anything but this repository's open `claude/` PRs. The
+  action checks out the PR head itself, forks included, so without the guard a fork's code
+  would run with the job's secrets (§15)
+- do not raise or remove `MAX_ROUNDS` in `decide-next-round`, or count rounds from
+  anything but its own `github-actions[bot]` marker comments. Each round is a full developer
+  run plus a full review on the owner's subscription; the cap is what bounds one PR's
+  spend without the owner (§15)
+- do not move the developer's check gate into `.claude/settings.json` or the prompt. It is a
+  PreToolUse hook wired in through the action's `settings` input, so it binds every CI run
+  and no local session, and its script lives under `.claude/`, which the action restores
+  from the base branch on PRs (§15)
+- do not drop the code-reviewer's `--disallowedTools`. Tag mode grants `acceptEdits` and
+  git commit/push to every run, so without the deny list the reviewer can push (§15)
 - do not put the Claude app on the `protect-main` ruleset's bypass list, and do not add
   `.claude/agents/` roles that hold their own copy of the rules — the role files point at
   this file so there is exactly one rubric to drift from
@@ -946,14 +959,16 @@ If the implementation changes materially, update this file in the same work.
    `async with` quickstart is the next thing worth adding.
 7. Docs site: scaffolded, see §13. Keep the Google-style docstrings on the public API
    (§10.4) accurate — they're the site's actual content, not just source-level docs.
-8. Agent workflow (§15): `implement`, `revise`, `review`, and `groom` exist. Keep folding
-   what each run gets wrong back into §11 and the role files. The on-demand architect waits
-   for the first proposal that needs design.
+8. Agent workflow (§15): the product-groomer, python-developer, and code-reviewer agents
+   exist, and review findings and CI failures go back to the developer without the owner
+   relaying them. Keep folding what each run gets wrong back into §11 and the role files.
+   The on-demand architect waits for the first proposal that needs design.
 
 ### 12.1 What New Work May Target
 
-This is the scope the `product` role (§15) proposes from. It is the owner's to change, and
-nothing outside it is proposed until the owner moves it here. Who the SDK is for: Python
+This is the scope the `product-groomer` role (§15) proposes from. It is the owner's to change.
+The groomer has three sources, all bounded by the out-of-scope list below: the decided list,
+a consumer's point of view, and technical work. Who the SDK is for: Python
 developers building Dota 2 tools (README). It earns its place by returning typed, joined
 objects instead of raw JSON (§1, §3.3), so new work is worth proposing when it gives a caller
 data they would otherwise fetch and join by hand.
@@ -962,11 +977,11 @@ The universe of endpoints is OpenDota's OpenAPI spec at `https://api.opendota.co
 paths in October 2026. The SDK covers `/heroes`, `/heroStats`, `/heroes/{id}/itemPopularity`,
 `/heroes/{id}/matchups`, and the five `/constants/*` files the hero and item flows join.
 
-**Only build on what exists.** A proposal may use only entities the SDK already models. An
-endpoint whose natural result is an entity the SDK does not model yet waits for that domain,
-however easy it looks: `/heroes/{id}/players` returns player account ids, so it waits for the
-players domain rather than shipping bare ids as `Hero.get_players()`. Prefer work that
-completes or hardens what exists over work that starts something new.
+**Model what you return.** A proposal never hands callers bare ids for an entity the SDK
+does not model: `/heroes/{id}/players` returns player account ids, so `Hero.get_players()`
+returning them as ints is the wrong shape however easy it looks. A proposal that needs a new
+entity designs its model too, which makes it new-domain work. When two candidates serve
+consumers equally, prefer the one that completes or hardens what exists.
 
 **Decided**, proposed in this order, one issue each:
 
@@ -979,8 +994,20 @@ completes or hardens what exists over work that starts something new.
    `X-Rate-Limit-Remaining-Minute` (§8.2), and an explicit refresh or TTL for cached
    results (§2.3)
 
-**Technical and maintenance work** may be proposed alongside the list above, at most one issue
-per run so domain work is not crowded out. Each needs evidence in the repository, not taste:
+**From the consumer's point of view**, up to two proposals per run may come from what a
+Python developer building a Dota 2 tool needs, whether or not the decided list names it. The
+owner chose in October 2026 not to limit the groomer to the decided list, which only says what
+the owner already thought of. A consumer-driven proposal may reach anything not out of
+scope, including the areas below that are not on the decided list, but it must be grounded:
+it names the tool its consumer is building, shows the code they write today with only the
+existing API, and quotes the SDK lines that force the workaround, or verifies the data it
+adds like any endpoint (§6.3). Taste is not evidence. A proposal that opens a new domain
+proposes the smallest useful end-to-end slice (one endpoint, its model, its entry point, in
+the §5/§6 shape) and says in its open questions that it opens a domain, so the owner decides
+whether it goes ahead, gets steered, or needs design first.
+
+**Technical and maintenance work** may be proposed alongside the sources above, at most one
+issue per run so domain work is not crowded out. Each needs evidence in the repository, not taste:
 
 - this file disagreeing with the code, such as a stale count, a renamed function, or a rule
   the code breaks
@@ -1005,18 +1032,19 @@ Not technical work for the groomer: dependency bumps (Renovate owns them), chang
   a query language or a job queue
 - live games: `/live`
 
-**Not decided.** Do not propose these until the owner moves them into the decided list:
+**Not on the decided list.** The owner has not put these in order, so they reach the groomer
+only as consumer-driven proposals, never as decided work:
 
 - the next domain after heroes: players (`/players/*`, 14 read endpoints, plus
   `/heroes/{id}/players`) or matches (`/matches/{id}`, `/publicMatches`, `/parsedMatches`,
-  `/heroes/{id}/matches`). Each brings a new domain model, so the first issue in either is a
-  design question (§10.1), not an endpoint
+  `/heroes/{id}/matches`). Each brings a new domain model, so the first issue in either
+  designs that model (§10.1) rather than adding an endpoint to `Hero`
 - the domain-oriented long tail: `/search`, `/findMatches`, `/scenarios/*`,
   `/distributions`, `/rankings`, `/records/{field}`, and `/topPlayers`
 - constants beyond the five files the SDK joins today
 
-When every decided item has an issue, open or closed, the groomer proposes nothing and says
-so in its run log. That is the signal for the owner to decide the next domain.
+When every decided item has an issue, open or closed, the groomer proposes only
+consumer-driven and technical work, and says so in its run log.
 
 ---
 
@@ -1112,55 +1140,97 @@ What `ci.yml` does per trigger:
 
 ## 15. Agent Workflow
 
-Feature work can be delegated to Claude Code running in GitHub Actions
-(`.github/workflows/agents.yml`, the Claude Code Action pinned by SHA). This file is the
-constitution for every role; the role prompts under `.claude/agents/` are thin and point at
-sections here rather than restating them. They also register as Claude Code subagents for
-local use.
+Feature work can be delegated to Claude Code running in GitHub Actions, through the Claude
+Code Action pinned by SHA. Each agent has its own workflow file, so a change to one agent's
+triggers, tools, or permissions is reviewed on its own:
+
+| Agent | Role file | Workflow | Jobs |
+|---|---|---|---|
+| product-groomer | `.claude/agents/product-groomer.md` | `agent-product-groomer.yml` | `propose-issues`, `refine-proposal` |
+| python-developer | `.claude/agents/python-developer.md` | `agent-python-developer.yml` | `implement-issue`, `revise-on-request`, `fix-review-findings` |
+| code-reviewer | `.claude/agents/code-reviewer.md` | `agent-code-reviewer.yml` | `review-pull-request`, `decide-next-round`, `send-back-to-developer` |
+
+This file is the constitution for every role; the role prompts under `.claude/agents/` are
+thin and point at sections here rather than restating them. They also register as Claude
+Code subagents for local use. Until October 2026 the roles were `product`, `developer`, and
+`reviewer`, all in one `agents.yml`; the owner renamed them to say what each one works on
+and split the file so each agent's workflow can be read on its own.
 
 **Current:**
 
-- `implement` — the `developer` role. Fires when the repository owner adds `approved` or
-  `design-approved` to an issue. It posts a plan comment, implements on a `claude/` branch
-  copying the nearest existing pattern, runs the §9.3 commands, updates this file per §10.5,
-  and opens the PR itself with a Conventional Commits title. It never touches the version,
-  the workflows, or `.claude/`.
-- `revise` — the `developer` role again, sent back to its own PR. Fires when the owner
-  comments `@claude` on a PR. A guard step runs before any PR code is fetched and fails the
-  job unless the PR is open and its head is a `claude/` branch in this repository, because
-  the action would otherwise check out a fork's head with the job's secrets. The owner's
-  comment is the whole task; the developer commits to the same branch, and the push re-runs
-  `review`. It shares `implement`'s concurrency queue. It may read the PR conversation
-  (`gh pr view`, and `gh api` on any PR's review-comments endpoint) so it can see the
-  reviewer's findings.
+- `implement-issue` — the python-developer. Fires when the repository owner adds
+  `approved` or `design-approved` to an issue. It posts a plan comment, implements on a
+  `claude/` branch copying the nearest existing pattern, runs the §9.3 commands, updates
+  this file per §10.5, and opens the PR itself with a Conventional Commits title. It never
+  touches the version, the workflows, or `.claude/`.
+- `revise-on-request` — the python-developer again, sent back to its own PR. Fires when the
+  owner comments `@claude` on a PR. A guard step runs before any PR code is fetched and
+  fails the job unless the PR is open and its head is a `claude/` branch in this
+  repository, because the action would otherwise check out a fork's head with the job's
+  secrets. The owner's comment is the whole task; the developer commits to the same
+  branch, and the push re-runs the review. It may read the PR conversation (`gh pr view`,
+  and `gh api` on any PR's review-comments endpoint) so it can see the reviewer's findings.
   The owner chose that knowing it exposes the model to comments from anyone on a public
   repo; the role file treats every comment except the owner's as information only.
-- `review` — the `reviewer` role. Fires on every PR whose head is in this repository, except
-  Renovate's. It reads every changed file, checks the diff against §11, §5/§6, §10.6, §9.2,
-  §10.4, and §10.5 in that order, verifies data claims against fixtures and OpenDota's
-  source with the same two `curl` forms the developer has, runs the validation commands,
-  and reports inline findings tagged blocking/nit. It edits nothing and cannot approve.
-  Its first real review (#87) passed in 9 turns after skipping the docs changes and every
-  data claim, and missed docstrings calling pro-league matchups "every match". The role now
-  treats anything unread or unverified as a blocking finding.
+- `fix-review-findings` — the python-developer, sent back without the owner. A reusable
+  job (`workflow_call`) that only `send-back-to-developer` calls, with the same guard step
+  as `revise-on-request`. The task is the code-reviewer's blocking findings, read from
+  comments by `claude[bot]`, and the failing CI log. It was added because the owner's
+  comments on agent PRs were mostly relays: #87 got "address the reviewer's comments"
+  twice, #102 once, and #97 a CI format failure pasted back by hand.
+- `review-pull-request` — the code-reviewer. Fires on every PR whose head is in this
+  repository, except Renovate's. It reads every changed file, checks the diff against §11,
+  §5/§6, §10.6, §9.2, §10.4, and §10.5 in that order, verifies data claims against fixtures
+  and OpenDota's source with the same two `curl` forms the developer has, runs the
+  validation commands, and reports inline findings tagged blocking/nit. It ends with a
+  structured verdict (`--json-schema`: `blocking_findings`, `nits`), which is what the loop
+  reads, never the comment text. It edits nothing and cannot approve: tag mode grants
+  `acceptEdits` and git commit/push to every run, so the job takes them back with
+  `--disallowedTools`. Its first real review (#87) passed in 9 turns after skipping the docs
+  changes and every data claim, and missed docstrings calling pro-league matchups "every
+  match". The role now treats anything unread or unverified as a blocking finding.
+- `decide-next-round` — no model, a shell step. On `claude/` PRs only, after the review: it
+  checks the PR is still open and still at the reviewed commit, waits for that commit's
+  `ci.yml` run, and sends the developer back when the verdict has blocking findings or CI
+  failed. Rounds are counted from its own `github-actions[bot]` marker comments, which it
+  posts on the PR, one per round. After `MAX_ROUNDS` (3) it posts once that it stopped and
+  the owner takes over. A clean review with green CI ends the loop, ready for the owner.
+  Comments made with `GITHUB_TOKEN` start no workflow, so the markers cannot trigger
+  anything; the developer's push, made with the Claude app's token, does, and that new
+  `synchronize` event reviews the new commit.
+- `propose-issues` — the product-groomer. Runs every Monday at 07:00 UTC, and on demand
+  from the Actions tab (`workflow_dispatch`, owner only). It proposes from §12.1's three
+  sources: the decided list, up to two consumer-driven issues per run (what a developer
+  building a Dota 2 tool needs, shown as the code they write today, reaching anything not
+  out of scope), and at most one technical or maintenance issue backed by quoted evidence.
+  It verifies every candidate that adds data live and its population in OpenDota's source,
+  and opens at most three issues labeled `proposal`, each with a usage example of the
+  proposed surface and a design-level plan. The owner widened it from the decided list
+  alone in October 2026. It creates nothing while three proposals are waiting for the owner. A `proposal`
+  label starts nothing; the owner reads the issue and adds `approved`. The owner chose to
+  build it after one end-to-end endpoint run (#80/#87), rather than after all the §12.5
+  endpoints as an earlier version of this section planned.
+- `refine-proposal` — the product-groomer again, sent back to one of its proposals. Fires
+  when the owner comments `@claude` on an open issue labeled `proposal` and not yet
+  `approved`. The owner's comment is the whole task: the groomer rewrites that issue's
+  body, and its title if the entry point's name changed, re-verifying any data the change
+  touches, then replies once with what it changed. It shares `propose-issues`' queue.
+  After `approved`, steering moves to the developer's PR through `revise-on-request`, so
+  between the two the owner can steer both agents where they work: the groomer on the
+  issue, the developer on the PR.
 
-- `groom` — the `product` role. Runs every Monday at 07:00 UTC, and on demand from the
-  Actions tab (`workflow_dispatch`, owner only). It proposes from §12.1 only: domain work that
-  builds on entities the SDK already models, and at most one technical or maintenance issue
-  per run backed by quoted evidence. It verifies each domain candidate's payload live and its
-  population in OpenDota's source, and opens at most three issues labeled `proposal`, each
-  with a usage example of the proposed surface and a design-level plan. It creates nothing
-  while three proposals are waiting for the owner. A `proposal` label starts nothing; the
-  owner reads the issue and adds `approved`. The owner chose to build it after one
-  end-to-end endpoint run (#80/#87), rather than after all the §12.5 endpoints as an
-  earlier version of this section planned.
-- `refine` — the `product` role again, sent back to one of its proposals. Fires when the
-  owner comments `@claude` on an open issue labeled `proposal` and not yet `approved`. The
-  owner's comment is the whole task: the groomer rewrites that issue's body, and its title if
-  the entry point's name changed, re-verifying any data the change touches, then replies
-  once with what it changed. It shares `groom`'s queue. After `approved`, steering moves to
-  the developer's PR through `revise`, so between the two the owner can steer both agents
-  where they work: the groomer on the issue, the developer on the PR.
+**The developer's check gate.** Every python-developer job passes the action a `settings`
+input with a PreToolUse hook, `.claude/hooks/require-green-checks.sh`. Before any push
+(tag mode pushes through the action's `git-push.sh` wrapper) or `gh pr create`, it runs
+`ruff check`, `ruff format --check`, `ty check`, and `pytest`, and refuses the command,
+handing the failing output back to the agent, until they pass. It also refuses while
+tracked files have uncommitted changes, since the checks see the working tree and the
+push sends commits. A green result is remembered per commit, so a push followed by
+`gh pr create` runs the checks once. The role file already asked for these checks; #97
+still shipped three red pushes. The hook is in the workflow, not `.claude/settings.json`,
+so local sessions are unaffected, and its script is under `.claude/`, which the action
+restores from the base branch on PRs, so a PR cannot weaken the gate for its own run. CI
+remains the final check: the hook does not run zizmor or the Python version matrix.
 
 **Planned, not built:** an on-demand `design` job (the `architect` role, on `needs-design`,
 posting options and a recommendation; the owner then labels `design-approved`). It waits for
@@ -1169,32 +1239,35 @@ the first proposal that needs design, most likely the first issue in a new domai
 **Gates, and why each exists.** Only the owner can start or ship an implementation:
 
 1. The action refuses to run for actors without write access, so issues, comments, and
-   labels from anyone else never start a run. Fork PRs receive no secrets. The `review`
-   job allows exactly two bot logins, the Claude app's, because PRs the developer opens
-   arrive with that actor.
-2. `implement` checks `sender.login` is the owner and the label is one of the two. The
-   label is the whole start approval: adding it starts the build immediately. An earlier
-   version also parked the job on an `agent-build` environment with the owner as required
-   reviewer, so every run needed a second Approve click in the Actions UI; the owner
-   dropped that as friction with no security gain, since only the owner can add the label
-   in the first place. The environment still exists in the repo settings but nothing
-   references it.
+   labels from anyone else never start a run. Fork PRs receive no secrets. The
+   `review-pull-request` and `fix-review-findings` jobs allow exactly two bot logins, the
+   Claude app's, because PRs and pushes from the developer arrive with that actor.
+2. `implement-issue` checks `sender.login` is the owner and the label is one of the two.
+   The label is the whole start approval: adding it starts the build immediately. An
+   earlier version also parked the job on an `agent-build` environment with the owner as
+   required reviewer, so every run needed a second Approve click in the Actions UI; the
+   owner dropped that as friction with no security gain, since only the owner can add the
+   label in the first place. The environment still exists in the repo settings but nothing
+   references it. `fix-review-findings` starts no new work: it only continues a PR the
+   owner's label already started, and only on its own `claude/` branch.
 3. The `protect-main` ruleset requires a PR, green CI, and an owner review. Its bypass
    list holds two entries, both in pull-request mode: Renovate, so dependency automerge
    works, and the Repository admin role, because GitHub never lets a PR's author approve
    it and the owner is the only code owner — without that entry the owner's own PRs could
    never merge. The Claude app is on neither list, so it can push `claude/*` branches but
    never merge. On agent PRs the owner still approves rather than bypassing, so the
-   review is recorded.
-4. Spend is bounded three ways: one `implement` at a time (`concurrency`), `--max-turns`
-   and `timeout-minutes` per job, and the runs drawing on the owner's Claude subscription
-   through a `claude setup-token` OAuth token (`CLAUDE_CODE_OAUTH_TOKEN`), whose plan limits
-   are the ceiling. An API key was tried first and every run was rejected with "Credit
-   balance is too low", although the Console organization held the monthly API credit
-   that comes with the Max plan: that credit explicitly excludes Claude Code, and the
-   action is Claude Code. Do not switch back to `anthropic_api_key` without buying
-   Console credit. Only the owner's comments reach the model (`include_comments_by_actor`).
-5. Network access for `implement` is two literal `curl -sS` prefixes, one for
+   review is recorded. A clean automatic loop ends at this gate, not at a merge.
+4. Spend is bounded four ways: one python-developer run at a time (all three of its jobs
+   share the `agent-python-developer` concurrency queue), at most `MAX_ROUNDS` automatic
+   fix rounds per PR, `--max-turns` and `timeout-minutes` per job, and the runs drawing on
+   the owner's Claude subscription through a `claude setup-token` OAuth token
+   (`CLAUDE_CODE_OAUTH_TOKEN`), whose plan limits are the ceiling. An API key was tried
+   first and every run was rejected with "Credit balance is too low", although the Console
+   organization held the monthly API credit that comes with the Max plan: that credit
+   explicitly excludes Claude Code, and the action is Claude Code. Do not switch back to
+   `anthropic_api_key` without buying Console credit. Only the owner's comments reach the
+   model's prompt context (`include_comments_by_actor`).
+5. Network access for the python-developer is two literal `curl -sS` prefixes, one for
    `api.opendota.com/api/` and one for `raw.githubusercontent.com/odota/`, so the developer
    can record real fixtures and read OpenDota's source (§6.3). The first real run stopped
    without them rather than invent data, which is the behavior to keep. The rules end in a
@@ -1204,26 +1277,29 @@ the first proposal that needs design, most likely the first issue in a new domai
    off: the action bans it by default, and it summarizes pages through a small model, so it
    cannot record raw JSON. The tool allowlist is not the real boundary, though:
    `Bash(uv run:*)` already lets the agent run code with network access. What protects the
-   subscription token is `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` on both jobs, which strips
-   credentials from every subprocess while leaving GitHub tokens for `gh`. Do not remove it.
-   The scrub needs `bubblewrap`, and Claude Code refuses to start without it. The action
-   installs it only when `allowed_non_write_users` is set, which this workflow never sets,
-   so each job has its own "Install subprocess isolation dependencies" step copied from the
-   action. The first run with the scrub on failed at startup for exactly this reason.
-6. `groom` and `refine` cannot execute code: they have no `uv`, no `Bash(uv run:*)`, no git
-   tools, and `contents: read`. They read the repository and use the same read-only `curl`
-   forms, plus the bare spec URL. `groom` lists and creates issues; `refine` can read, edit
-   (title and body only), and comment on the one issue that triggered it. `groom` reads issue
-   and PR titles written by anyone on a public repo, and `refine` reads the issue's comments,
-   so a prompt injection could at worst produce a bad `proposal` issue, which starts nothing.
-   Do not give either `uv run`, write access to code, or any label but `proposal`.
+   subscription token is `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` on every agent job, which
+   strips credentials from every subprocess while leaving GitHub tokens for `gh`. Do not
+   remove it. The scrub needs `bubblewrap`, and Claude Code refuses to start without it.
+   The action installs it only when `allowed_non_write_users` is set, which these workflows
+   never set, so each job has its own "Install subprocess isolation dependencies" step
+   copied from the action. The first run with the scrub on failed at startup for exactly
+   this reason.
+6. `propose-issues` and `refine-proposal` cannot execute code: they have no `uv`, no
+   `Bash(uv run:*)`, no git tools, and `contents: read`. They read the repository and use
+   the same read-only `curl` forms, plus the bare spec URL. `propose-issues` lists and
+   creates issues; `refine-proposal` can read, edit (title and body only), and comment on
+   the one issue that triggered it. The groomer reads issue and PR titles written by anyone
+   on a public repo, and `refine-proposal` reads the issue's comments, so a prompt injection
+   could at worst produce a bad `proposal` issue, which starts nothing. Do not give either
+   `uv run`, write access to code, or any label but `proposal`.
 
 Labels: `proposal` (groomer output, nothing runs), `needs-design` (architect, planned),
-`design-approved` and `approved` (implement). The action restores `.claude/` and `CLAUDE.md`
-from the base branch when it runs on a PR, so a PR cannot rewrite a role file. `AGENTS.md`
-is **not** on that restored list: a PR can edit the rubric the reviewer reads. That is
-acceptable only because the reviewer's tools are read-only and the owner still reviews
-the `AGENTS.md` diff itself before merging; do not give the `review` job write tools.
+`design-approved` and `approved` (`implement-issue`). The action restores `.claude/` and
+`CLAUDE.md` from the base branch when it runs on a PR, so a PR cannot rewrite a role file
+or the check gate's script. `AGENTS.md` is **not** on that restored list: a PR can edit the
+rubric the reviewer reads. That is acceptable only because the reviewer cannot edit or push,
+the loop is capped, and the owner still reviews the `AGENTS.md` diff itself before merging;
+do not give `review-pull-request` write tools.
 
 ---
 
