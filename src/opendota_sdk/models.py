@@ -448,10 +448,11 @@ class HeroBenchmarks:
 
     Each value is a sample quantile of recently parsed players on this hero, not an
     all-time average as OpenDota's docs suggest. OpenDota's source samples only a
-    fraction of matches (by `match_id`), keeps those that are significant or turbo, and
-    reads a rolling window: the previous retention epoch, falling back to the current
-    one when that is empty. This is the unfiltered curve; the endpoint's `bracket` and
-    `role` filters are not exposed.
+    fraction of matches (by `match_id`) and reads a rolling window: the previous
+    retention epoch, falling back to the current one when that is empty. Turbo matches
+    are sampled too, but into separate sets that this endpoint never reads, so the
+    curve covers significant non-turbo matches only. This is the unfiltered curve; the
+    endpoint's `bracket` and `role` filters are not exposed.
 
     Attributes:
         hero_id: Numeric hero id, matching `Hero.id`.

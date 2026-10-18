@@ -472,7 +472,9 @@ source (`getHeroBenchmarks` in `svc/util/queries.ts`, `updateBenchmarks` in `svc
 - each value is a sample quantile, not the "average stat value" the docs describe: the element at
   `floor(zcard * percentile)` of a Redis sorted set, over a rolling window (the previous retention
   epoch, falling back to the current one). The writer samples matches by `match_id % 100`, keeps
-  significant or turbo matches, and every player with a hero contributes.
+  significant or turbo matches, and every player with a hero contributes. Turbo samples go to
+  separate `:turbo` sets that `getHeroBenchmarks` never reads (it always queries the empty turbo
+  slot), so the curve covers significant non-turbo matches only.
 - an **unknown hero id is HTTP 200 with all ten metrics present and every `value` `null`**, so it
   is not an error; `HeroBenchmarks.is_empty` (every value `None`) is how callers tell.
 - the endpoint also takes `bracket` and `role`; they are **not exposed**. Their payload was never
