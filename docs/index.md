@@ -28,8 +28,8 @@ Requires Python 3.11+.
 
 The SDK is still alpha and grows one domain slice at a time. Today it covers:
 
-- **Items** — [`get_items()`](api/client.md) / `get_item()`, returning typed `Item`
-  models assembled from `/constants/items`.
+- **Items** — [`get_items()`](api/client.md) / `get_item()` (which takes an `ItemName`
+  member), returning typed `Item` models assembled from `/constants/items`.
 - **Heroes** — [`get_heroes()`](api/client.md) / `get_hero()`, merging `/heroes` with
   four constants endpoints into typed `Hero` models with abilities, talents, and lore.
 - **Hero statistics** — [`get_hero_stats()`](api/client.md) for every hero, and the

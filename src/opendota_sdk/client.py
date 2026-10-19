@@ -9,7 +9,7 @@ from typing import Any, Self
 from opendota_sdk._config import OpenDotaClientConfig
 from opendota_sdk._context import bind_client, unbind_client
 from opendota_sdk.assembler import Assembler
-from opendota_sdk.enums import HeroName
+from opendota_sdk.enums import HeroName, ItemName
 from opendota_sdk.http._auth import AuthHandler
 from opendota_sdk.http._retry import RetryPolicy
 from opendota_sdk.http._transport import AsyncHTTPTransport
@@ -497,15 +497,18 @@ class OpenDotaAsyncClient:
         return list(self._items_cache)
 
     async def get_item(
-        self, *, item_id: int | None = None, item_name: str | None = None
+        self, item_name: ItemName | str | None = None, *, item_id: int | None = None
     ) -> Item | None:
-        """Look up a single item by id or internal name.
+        """Look up a single item by name or id.
 
         Populates the item cache via `get_items()` if needed, then resolves from an index.
+        `item = await client.get_item(ItemName.BLACK_KING_BAR)` is the usual form.
 
         Args:
-            item_id: Numeric item id.
-            item_name: Internal item name (e.g. `"blink"`).
+            item_name: The item, as an `ItemName` member or its internal name string
+                (`"blink"`). A plain string also covers items added in a patch newer than
+                `ItemName`. May be passed positionally.
+            item_id: Numeric item id. Keyword-only.
 
         Returns:
             The matching item, or `None` if no item has that id or name.

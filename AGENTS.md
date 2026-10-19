@@ -49,7 +49,7 @@ Rules:
 
 Implemented today:
 
-- item constants flow via `get_items()`
+- item constants flow via `get_items()`, and `get_item()` taking an `ItemName` member positionally (§5.4)
 - hero list flow via `get_heroes()` returning typed `Hero` models
 - hero statistics flow via `get_hero_stats()` (every hero) and `Hero.get_stats()` (one hero),
   returning typed `HeroStats` models
@@ -179,7 +179,8 @@ Public exports should be limited to stable, user-facing types such as:
 - selected user-facing models like `Item`, `Hero`, `HeroStats`, `HeroItemPopularity` (with its
   `PopularItem` entries), and `HeroMatchups` (with its `HeroMatchup` entries), plus the enums they expose
   (`HeroSkillBracket` is exported because `HeroBracketStats.bracket` hands it to callers), and
-  `HeroName`, which callers pass to `get_hero()` (§6.1), `HeroBenchmarks` (with `HeroBenchmark` and
+  `HeroName`, which callers pass to `get_hero()` (§6.1), `ItemName`, which callers pass to
+  `get_item()` (§5.4), `HeroBenchmarks` (with `HeroBenchmark` and
   `BenchmarkPoint`), and `BenchmarkMetric`, which callers pass to `HeroBenchmarks.get()` (§6.5)
 
 The ambient-client helpers in `_context.py` are **not** exported: `active_client()`, `bind_client()`,
@@ -223,7 +224,7 @@ src/opendota_sdk/
 ├── _records.py          # Raw item record boundary before assembly
 ├── assembler.py         # Item, hero, hero-stats, item-popularity, and matchups normalization
 ├── client.py            # OpenDotaAsyncClient (owns all raw fetching and caching)
-├── enums.py             # Hero-related enums, shared enum types, and `HeroName` for lookups
+├── enums.py             # Hero-related enums, shared enum types, `HeroName` and `ItemName` for lookups
 ├── models.py            # Typed Item, Hero, HeroStats, HeroItemPopularity, HeroMatchups models, item enums
 ├── py.typed             # PEP 561 marker; the package ships as typed
 └── http/
@@ -278,6 +279,24 @@ When improving item behavior:
 - start at `assembler.py`, `_records.py`, `models.py`, or `client.py`
 - preserve the raw-record -> assembler -> model flow
 - add focused tests before widening scope
+
+`ItemName` (`enums.py`) is the `HeroName` pattern (§6.1) applied to items: a static `StrEnum`
+mirroring the vendored `tests/fixtures/items.json`, valued with the internal name
+(`BLINK_DAGGER = "blink"`), and `get_item()` takes `item_name` positionally as `ItemName | str`
+with `item_id` keyword-only. Plain strings keep working for items newer than the enum, and
+`_items_by_name` is unchanged because a member hashes as its value. Items need naming rules
+heroes did not:
+
+- the member is the in-game `dname` normalized as for `HeroName` (apostrophes dropped, other
+  separators become `_`), so `BLINK_DAGGER`
+- an item with no `dname` (a few recipes) or whose `dname` another item shares (leveled variants
+  `dagon_2` … `dagon_5`, `necronomicon_2`, `diffusal_blade_2`) is named after its internal name,
+  upper-cased (`RECIPE_WRAITH_PACT`, `DAGON_2`)
+- every constants entry gets a member, recipes included (`BLACK_KING_BAR_RECIPE`), because
+  `get_item()` resolves them all; a purchasable-only enum would drift from what the lookup accepts
+
+`test_item_name.py` fails, naming the member to add, when the fixture gains an item. Do not shorten
+or build the enum from the API at runtime, for the reasons in §11.
 
 ---
 
@@ -662,6 +681,8 @@ Existing coverage includes:
 - hero merge/assembly, plus a regression sweep over every real hero (`test_heroes_fixture.py`)
 - `HeroName` kept in step with the vendored heroes, one member per hero named by the in-game
   name (`test_hero_name.py`), and `get_hero()` taking it positionally (`test_client.py`)
+- `ItemName` kept in step with the vendored items and its naming rules (`test_item_name.py`),
+  and `get_item()` taking it positionally (`test_client.py`)
 - hero stats assembly (bracket folding, win rates, required-field errors)
 - hero item popularity: assembler resolution/sorting/unresolved-id handling (`test_assembler.py`),
   a regression sweep over recorded real payloads (`test_item_popularity_fixture.py`), and
@@ -861,6 +882,8 @@ When editing this project, do not introduce instruction drift in these areas:
   0.1.0a8 — verified in `svc/web.ts` and live. Do not move it to `?api_key=` either: the key
   would then sit in every request URL and in `HTTPStatusError.url`/its message. Tests pin the
   exact header on the wire (`test_auth.py`)
+- do not make `get_item()` accept only `ItemName`, and do not build `ItemName` from the API at
+  runtime, for the same reasons as `HeroName` (§5.4)
 - do not make `get_hero()` accept only `HeroName`, and do not build `HeroName` from the API at
   runtime. A plain internal-name string must keep working for heroes newer than the enum, and a
   runtime-built enum is invisible to type checkers and editors, which is the point of it (§6.1)
@@ -988,7 +1011,7 @@ consumers equally, prefer the one that completes or hardens what exists.
 1. the remaining hero-scoped endpoints whose results need only existing entities:
    `/benchmarks` is done (§6.5); `/heroes/{id}/durations` was declined (#92)
 2. an `ItemName` enum and a positional `get_item()` lookup, mirroring `HeroName` and
-   `get_hero()` (§6.1), so callers stop passing internal item name strings
+   `get_hero()` (§6.1) — done (§5.4)
 3. the README `async with` quickstart (§12.6)
 4. the known limits this file already records: proactive throttling from
    `X-Rate-Limit-Remaining-Minute` (§8.2), and an explicit refresh or TTL for cached

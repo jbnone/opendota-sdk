@@ -1,6 +1,7 @@
 """Tests for OpenDota client."""
 
 import asyncio
+import inspect
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,6 +15,7 @@ from opendota_sdk.enums import (
     HeroPrimaryAttribute,
     HeroRole,
     HeroSkillBracket,
+    ItemName,
 )
 from opendota_sdk.models import AbilityBehavior, Hero, HeroStats, HeroTalent, Item
 
@@ -332,6 +334,26 @@ async def test_get_item_by_name_returns_typed_item_model():
 
     assert isinstance(item, Item)
     assert item.name == "blink"
+
+
+@pytest.mark.asyncio
+async def test_get_item_takes_item_name_member_or_string_positionally():
+    async with OpenDotaAsyncClient() as client:
+        client._get = AsyncMock(return_value=_BLINK_ITEMS_DATA)
+
+        by_member = await client.get_item(ItemName.BLINK_DAGGER)
+        by_string = await client.get_item("blink")
+
+    assert by_member is not None
+    assert by_member is by_string
+    assert by_member.name == ItemName.BLINK_DAGGER
+
+
+def test_get_item_id_is_keyword_only():
+    params = inspect.signature(OpenDotaAsyncClient.get_item).parameters
+
+    assert params["item_id"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert params["item_name"].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
 
 
 @pytest.mark.asyncio
