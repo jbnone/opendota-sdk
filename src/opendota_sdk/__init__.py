@@ -19,6 +19,7 @@ from opendota_sdk.enums import (
     HeroPrimaryAttribute,
     HeroRole,
     HeroSkillBracket,
+    ItemName,
 )
 from opendota_sdk.models import (
     AbilityBehavior,
@@ -73,6 +74,7 @@ __all__ = [
     "Item",
     "ItemAbility",
     "ItemAbilityType",
+    "ItemName",
     "ItemQuality",
     "ItemTargetTeam",
     "ItemTargetType",
