@@ -29,7 +29,7 @@
       "matchDepTypes": ["dependency-groups"],
       "commitMessagePrefix": "deps(dev):",
       "minimumReleaseAge": "1 day",
-      "schedule": ["before 4am on monday"],
+      "schedule": ["before 4am on saturday"],
       "automerge": true,
       "platformAutomerge": true,
       "addLabels": ["automerge"]
@@ -37,7 +37,7 @@
     {
       "matchManagers": ["github-actions"],
       "commitMessagePrefix": "ci:",
-      "schedule": ["before 4am on monday"],
+      "schedule": ["before 4am on saturday"],
       "automerge": true,
       "platformAutomerge": true,
       "addLabels": ["automerge"]
@@ -45,7 +45,7 @@
     {
       "matchManagers": ["custom.regex"],
       "commitMessagePrefix": "deps(dev):",
-      "schedule": ["before 4am on monday"],
+      "schedule": ["before 4am on saturday"],
       "automerge": true,
       "platformAutomerge": true,
       "addLabels": ["automerge"]

@@ -1231,7 +1231,7 @@ and split the file so each agent's workflow can be read on its own.
   Comments made with `GITHUB_TOKEN` start no workflow, so the markers cannot trigger
   anything; the developer's push, made with the Claude app's token, does, and that new
   `synchronize` event reviews the new commit.
-- `propose-issues` — the product-groomer. Runs every Monday at 07:00 UTC, and on demand
+- `propose-issues` — the product-groomer. Runs every Saturday at 07:00 UTC, and on demand
   from the Actions tab (`workflow_dispatch`, owner only). It proposes from §12.1's three
   sources: the decided list, up to two consumer-driven issues per run (what a developer
   building a Dota 2 tool needs, shown as the code they write today, reaching anything not
