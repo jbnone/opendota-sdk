@@ -118,6 +118,11 @@ class OpenDotaAsyncClient:
         self._hero_benchmarks_cache: dict[int, HeroBenchmarks] = {}
         self._hero_benchmarks_locks: dict[int, asyncio.Lock] = {}
 
+        # Bumped by `clear_live_data()`. A fill remembers the value from before its fetch
+        # and skips storing if it changed, so a request already in flight cannot put
+        # pre-clear data back into a cache that was just emptied.
+        self._live_generation = 0
+
     async def _get(
         self,
         path: str,
@@ -263,8 +268,8 @@ class OpenDotaAsyncClient:
         """Fetch live pick/win statistics for every hero, cached per client.
 
         `/heroStats` is aggregate data that changes over time, but it is still cached so
-        that concurrent per-hero lookups collapse to one request. Create a new client to
-        observe fresh numbers.
+        that concurrent per-hero lookups collapse to one request. Call
+        `clear_live_data()` to observe fresh numbers from the same client.
 
         Returns:
             A fresh list of statistics for all heroes. Mutating the list does not affect
@@ -277,8 +282,17 @@ class OpenDotaAsyncClient:
             async with self._hero_stats_lock:
                 if self._hero_stats_cache is None:
                     started = time.perf_counter()
+                    generation = self._live_generation
                     raw_stats = await self._get("/heroStats")
                     stats = self._assembler.list_hero_stats(raw_stats)
+                    if generation != self._live_generation:
+                        logger.debug(
+                            "Loaded statistics for %d heroes in %.2fs; not cached "
+                            "because live data was cleared during the fetch",
+                            len(stats),
+                            time.perf_counter() - started,
+                        )
+                        return stats
                     self._hero_stats_by_id = {stat.hero_id: stat for stat in stats}
                     self._hero_stats_cache = stats
                     logger.debug(
@@ -305,7 +319,11 @@ class OpenDotaAsyncClient:
         Raises:
             OpenDotaError: If the underlying `get_hero_stats()` fetch fails.
         """
-        await self.get_hero_stats()
+        stats = await self.get_hero_stats()
+        if self._hero_stats_cache is None:
+            # Cleared while the fetch was in flight, so it was not cached and the index
+            # may be empty. Search what this call received instead.
+            return next((stat for stat in stats if stat.hero_id == hero_id), None)
         return self._hero_stats_by_id.get(hero_id)
 
     async def _get_hero_item_popularity(self, *, hero_id: int) -> HeroItemPopularity:
@@ -342,6 +360,7 @@ class OpenDotaAsyncClient:
             cached = self._hero_item_popularity_cache.get(hero_id)
             if cached is None:
                 started = time.perf_counter()
+                generation = self._live_generation
                 raw, _ = await asyncio.gather(
                     self._get(f"/heroes/{hero_id}/itemPopularity"),
                     self.get_items(),
@@ -349,6 +368,9 @@ class OpenDotaAsyncClient:
                 cached = self._assembler.normalize_hero_item_popularity(
                     raw, hero_id=hero_id, items_by_id=self._items_by_id
                 )
+                if generation != self._live_generation:
+                    self._log_uncached("item popularity", hero_id)
+                    return cached
                 self._hero_item_popularity_cache[hero_id] = cached
                 logger.debug(
                     "Loaded item popularity for hero %d (%d items across 4 phases) "
@@ -402,6 +424,7 @@ class OpenDotaAsyncClient:
             cached = self._hero_matchups_cache.get(hero_id)
             if cached is None:
                 started = time.perf_counter()
+                generation = self._live_generation
                 raw, _ = await asyncio.gather(
                     self._get(f"/heroes/{hero_id}/matchups"),
                     self.get_heroes(),
@@ -409,6 +432,9 @@ class OpenDotaAsyncClient:
                 cached = self._assembler.normalize_hero_matchups(
                     raw, hero_id=hero_id, heroes_by_id=self._heroes_by_id
                 )
+                if generation != self._live_generation:
+                    self._log_uncached("matchups", hero_id)
+                    return cached
                 self._hero_matchups_cache[hero_id] = cached
                 logger.debug(
                     "Loaded %d matchups for hero %d in %.2fs; cached on client",
@@ -452,8 +478,12 @@ class OpenDotaAsyncClient:
             cached = self._hero_benchmarks_cache.get(hero_id)
             if cached is None:
                 started = time.perf_counter()
+                generation = self._live_generation
                 raw = await self._get("/benchmarks", params={"hero_id": hero_id})
                 cached = self._assembler.normalize_hero_benchmarks(raw, hero_id=hero_id)
+                if generation != self._live_generation:
+                    self._log_uncached("benchmarks", hero_id)
+                    return cached
                 self._hero_benchmarks_cache[hero_id] = cached
                 logger.debug(
                     "Loaded %d benchmark metrics for hero %d in %.2fs; cached on client",
@@ -526,6 +556,41 @@ class OpenDotaAsyncClient:
         if item_id is not None:
             return self._items_by_id.get(item_id)
         return self._items_by_name.get(item_name)
+
+    @staticmethod
+    def _log_uncached(what: str, hero_id: int) -> None:
+        """Note that a fetch finished after `clear_live_data()` and was not cached."""
+        logger.debug(
+            "Loaded %s for hero %d but did not cache it: "
+            "live data was cleared during the fetch",
+            what,
+            hero_id,
+        )
+
+    def clear_live_data(self) -> None:
+        """Discard every cached live result so the next lookup fetches fresh numbers.
+
+        Drops hero statistics, item popularity, matchups, and benchmarks. Nothing is
+        fetched here: the next `Hero.get_stats()`, `Hero.get_item_popularity()`,
+        `Hero.get_matchups()`, or `Hero.get_benchmarks()` call does that. The hero and item
+        constants stay cached, since they only change with a patch. It is all-or-nothing;
+        there is no per-hero form.
+
+        A fetch already in flight when this is called still returns its data to the
+        caller that started it, but does not repopulate the cache, so it cannot bring
+        back numbers from before the call. Lookups made afterwards fetch again, and
+        concurrent ones still share one request.
+        """
+        self._live_generation += 1
+        self._hero_stats_cache = None
+        self._hero_stats_by_id = {}
+        self._hero_item_popularity_cache.clear()
+        self._hero_matchups_cache.clear()
+        self._hero_benchmarks_cache.clear()
+        logger.debug(
+            "Cleared cached live data (hero stats, item popularity, "
+            "matchups, benchmarks)"
+        )
 
     def activate(self) -> None:
         """Bind this client as the active client for the current context.
