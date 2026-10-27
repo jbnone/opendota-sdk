@@ -98,7 +98,7 @@ async def test_gather_after_clear_still_collapses_to_one_request():
 
 
 @pytest.mark.asyncio
-async def test_fetch_in_flight_during_clear_does_not_repopulate_the_cache():
+async def test_fetch_in_flight_during_clear_does_not_repopulate_the_cache(caplog):
     release = asyncio.Event()
     started = asyncio.Event()
     payloads = iter([[_stat(1, pub_pick=1)], [_stat(1, pub_pick=2)]])
@@ -116,18 +116,39 @@ async def test_fetch_in_flight_during_clear_does_not_repopulate_the_cache():
 
     client.clear_live_data()
     release.set()
-    stale_result = await stale
+    with caplog.at_level(logging.DEBUG, logger="opendota_sdk"):
+        stale_result = await stale
 
     # The caller that started the fetch still gets its answer ...
     assert stale_result is not None and stale_result.pub_picks == 1
+    uncached = [
+        r
+        for r in caplog.records
+        if r.getMessage().startswith("Loaded statistics for 1 heroes in ")
+        and r.getMessage().endswith(
+            "; not cached because live data was cleared during the fetch"
+        )
+    ]
+    assert len(uncached) == 1
+    assert uncached[0].levelno == logging.DEBUG
     # ... but it was not cached, so the next lookup fetches fresh data.
     assert client._hero_stats_cache is None
     fresh = await client._get_hero_stat(hero_id=1)
     assert fresh is not None and fresh.pub_picks == 2
 
 
+_PER_HERO = [
+    ("_get_hero_benchmarks", "_hero_benchmarks_cache", "benchmarks", _BENCHMARKS),
+    ("_get_hero_item_popularity", "_hero_item_popularity_cache", "item popularity", {}),
+    ("_get_hero_matchups", "_hero_matchups_cache", "matchups", []),
+]
+
+
 @pytest.mark.asyncio
-async def test_per_hero_fetch_in_flight_during_clear_is_not_cached():
+@pytest.mark.parametrize(("method", "cache", "what", "payload"), _PER_HERO)
+async def test_per_hero_fetch_in_flight_during_clear_is_not_cached(
+    caplog, method, cache, what, payload
+):
     release = asyncio.Event()
     started = asyncio.Event()
     calls = []
@@ -137,17 +158,30 @@ async def test_per_hero_fetch_in_flight_during_clear_is_not_cached():
         started.set()
         if len(calls) == 1:
             await release.wait()
-        return _BENCHMARKS
+        return payload
 
     client = _client(fake_get)
-    task = asyncio.create_task(client._get_hero_benchmarks(hero_id=1))
+    # Constants are already loaded, so only the live endpoint is fetched.
+    client._items_cache = []
+    client._heroes_cache = []
+    task = asyncio.create_task(getattr(client, method)(hero_id=1))
     await started.wait()
     client.clear_live_data()
     release.set()
-    await task
+    with caplog.at_level(logging.DEBUG, logger="opendota_sdk"):
+        result = await task
 
-    assert not client._hero_benchmarks_cache
-    await client._get_hero_benchmarks(hero_id=1)
+    assert result.hero_id == 1
+    assert not getattr(client, cache)
+    records = [
+        r
+        for r in caplog.records
+        if r.getMessage() == f"Loaded {what} for hero 1 but did not cache it: "
+        "live data was cleared during the fetch"
+    ]
+    assert len(records) == 1
+    assert records[0].levelno == logging.DEBUG
+    await getattr(client, method)(hero_id=1)
     assert len(calls) == 2
 
 
