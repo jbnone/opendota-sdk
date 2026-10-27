@@ -61,6 +61,7 @@ Implemented today:
   by the `BenchmarkMetric` enum — the third per-key endpoint, with no cross-domain join (§6.5)
 - four relationship methods, `Hero.get_stats()`, `Hero.get_item_popularity()`,
   `Hero.get_matchups()`, and `Hero.get_benchmarks()`, resolved through an ambient client (§6.2)
+- `OpenDotaAsyncClient.clear_live_data()`, the explicit way to drop cached live data (§2.3)
 - typed `Item`, `Hero`, `HeroStats`, `HeroItemPopularity`, `HeroMatchups`, and `HeroBenchmarks`
   models
 - internal transport, auth, retry, and error layers, including a per-client concurrency cap and
@@ -104,8 +105,17 @@ cache+lock+index shape even though `/heroStats`
 is live aggregate data rather than patch-gated constants. That is deliberate: the lock **is** the
 single-flight mechanism, so `asyncio.gather(*(hero.get_stats() for hero in heroes))` over every hero
 collapses to one HTTP request instead of one per hero. Dropping the cache to keep the numbers fresh
-would silently turn that into N requests. If staleness ever matters, add an explicit refresh or TTL —
-do not simply remove the cache.
+would silently turn that into N requests. Do not simply remove the cache.
+
+Staleness is handled by `OpenDotaAsyncClient.clear_live_data()`, a plain `def` that fetches nothing.
+It empties the four live-data caches (hero stats, item popularity, matchups, benchmarks) and leaves
+the hero and item constants alone. It is all-or-nothing, with no per-hero form and no TTL (the owner
+chose explicit only); it is named `clear_`, not `refresh_`, because it does not fetch. The
+single-flight locks survive it, so a `gather` after clearing still collapses to one request per key.
+A fetch already in flight when it is called would otherwise write pre-clear data back: the client
+keeps a `_live_generation` counter, each fill remembers the value from before its fetch, and a fill
+whose value changed returns its result to its own caller without caching it (logged at DEBUG).
+The call itself logs once at DEBUG.
 
 ---
 
@@ -1014,8 +1024,8 @@ consumers equally, prefer the one that completes or hardens what exists.
    `get_hero()` (§6.1) — done (§5.4)
 3. the README `async with` quickstart (§12.6)
 4. the known limits this file already records: proactive throttling from
-   `X-Rate-Limit-Remaining-Minute` (§8.2), and an explicit refresh or TTL for cached
-   results (§2.3)
+   `X-Rate-Limit-Remaining-Minute` (§8.2), and an explicit refresh for cached live
+   results — done as `clear_live_data()` (§2.3); a TTL was ruled out
 
 **From the consumer's point of view**, up to two proposals per run may come from what a
 Python developer building a Dota 2 tool needs, whether or not the decided list names it. The
