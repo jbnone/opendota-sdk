@@ -151,6 +151,7 @@ async def test_async_request_success():
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.ok = True
+        mock_response.headers = {}
         mock_response.json = MagicMock(return_value={"data": "value"})
 
         async def async_request(*args, **kwargs):

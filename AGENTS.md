@@ -663,11 +663,20 @@ How the waiting works, and why:
   the tests assert exact timings with a fake clock. An earlier draft left tenacity on real
   `asyncio.sleep`, and a test that claimed to check backoff timing silently checked nothing.
 
-Known limit: a rate-limited retry still spends one of `max_retries`, and a request that 429s
-re-queues behind others for a slot. A very large fan-out can therefore exhaust a request's
-attempts across several windows. Proactive throttling from `X-Rate-Limit-Remaining-Minute`
-(pausing before the quota runs out, rather than after a 429) would close that gap; it has
-not been built.
+Proactive pause: OpenDota's middleware sets `X-Rate-Limit-Remaining-Minute` before calling
+`next()`, so the header is on successful responses too (per its source in `svc/web.ts`; no live
+response's headers were captured). `_pause_if_quota_spent()` reads it on every non-429
+response and, at `0` or below, moves the same shared `_resume_at` to the next minute boundary
+on the server's clock via `_seconds_to_window_reset()` (shared with `_rate_limit_details()`).
+It logs one INFO line per deadline move. A missing or non-integer header does nothing
+(`/api` and `/api/metadata` are uncounted). The threshold is a fixed zero, not a config field
+and not a reserve: requests in flight each see a count that excludes the others, so a reserve
+would not make the value exact, and a config knob would widen the public surface (§3.5).
+
+Known limit: the proactive pause is approximate under concurrency, so a 429 can still happen;
+the reactive path above remains the backstop. A rate-limited retry still spends one of
+`max_retries`, and a request that 429s re-queues behind others for a slot, so a very large
+fan-out can still exhaust a request's attempts across several windows, only less often.
 
 ---
 
@@ -1024,7 +1033,7 @@ consumers equally, prefer the one that completes or hardens what exists.
    `get_hero()` (§6.1) — done (§5.4)
 3. the README `async with` quickstart (§12.6)
 4. the known limits this file already records: proactive throttling from
-   `X-Rate-Limit-Remaining-Minute` (§8.2), and an explicit refresh for cached live
+   `X-Rate-Limit-Remaining-Minute` — done (§8.2) — and an explicit refresh for cached live
    results — done as `clear_live_data()` (§2.3); a TTL was ruled out
 
 **From the consumer's point of view**, up to two proposals per run may come from what a
