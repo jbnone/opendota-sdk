@@ -116,7 +116,7 @@ jobs:
           fi
 
       - name: Run the python-developer agent
-        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
+        uses: anthropics/claude-code-action@d535f5172dec02b204866b393d6b20b9b2aaf98d # v1.0.266
         with:
           # Subscription auth: a long-lived token from `claude setup-token`, so
           # runs draw on the owner's Claude plan. An API key bills the Console
@@ -202,7 +202,7 @@ jobs:
           fi
 
       - name: Run the python-developer agent on its own PR
-        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
+        uses: anthropics/claude-code-action@d535f5172dec02b204866b393d6b20b9b2aaf98d # v1.0.266
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # No `prompt`: tag mode answers the owner's @claude comment, checks
@@ -280,7 +280,7 @@ jobs:
           fi
 
       - name: Run the python-developer agent on the review findings
-        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
+        uses: anthropics/claude-code-action@d535f5172dec02b204866b393d6b20b9b2aaf98d # v1.0.266
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # On a `pull_request` event, `track_progress` selects tag mode, which
