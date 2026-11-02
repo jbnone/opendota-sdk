@@ -128,6 +128,16 @@ def _parse_retry_after(value: str | None, server_date: datetime | None) -> int |
     return max(0, math.ceil((retry_at - now).total_seconds()))
 
 
+def _seconds_to_window_reset(server_date: datetime | None) -> int:
+    """Seconds until OpenDota's per-minute counter resets, plus a safety margin.
+
+    Measured on the server's clock (its `Date` header) when known, so client clock
+    skew cannot move the wait.
+    """
+    now = server_date or datetime.now(UTC)
+    return _MINUTE_WINDOW_SECONDS - now.second + _WINDOW_RESET_MARGIN_SECONDS
+
+
 def _rate_limit_details(headers: Mapping[str, str]) -> tuple[int | None, bool]:
     """Work out how long a 429 asks the client to wait, and whether it is the daily cap.
 
@@ -157,11 +167,7 @@ def _rate_limit_details(headers: Mapping[str, str]) -> tuple[int | None, bool]:
 
     remaining_minute = _parse_int(lowered.get("x-rate-limit-remaining-minute"))
     if remaining_minute is not None and remaining_minute < 0:
-        now = server_date or datetime.now(UTC)
-        return (
-            _MINUTE_WINDOW_SECONDS - now.second + _WINDOW_RESET_MARGIN_SECONDS,
-            False,
-        )
+        return _seconds_to_window_reset(server_date), False
 
     return None, False
 
@@ -363,6 +369,37 @@ class AsyncHTTPTransport(HTTPTransportBase):
             )
             self._resume_at = resume_at
 
+    def _pause_if_quota_spent(
+        self, response: niquests.Response, method: str, target: str
+    ) -> None:
+        """Hold the client for the rest of the minute once the quota reaches zero.
+
+        OpenDota sets `X-Rate-Limit-Remaining-Minute` on every counted response, not
+        only on 429s. At zero the next request would be rejected, so waiting for the
+        window now spares it (and every request behind it) a wasted attempt. A missing
+        or malformed header (uncounted paths, proxies) does nothing, and a 429 is left
+        to the reactive path. Requests already in flight each saw a count that excluded
+        the others, so a 429 can still happen; `_start_cooldown()` stays the backstop.
+        Logged only when the deadline actually moves.
+        """
+        if response.status_code == 429:
+            return
+        lowered = {key.lower(): value for key, value in response.headers.items()}
+        remaining = _parse_int(lowered.get("x-rate-limit-remaining-minute"))
+        if remaining is None or remaining > 0:
+            return
+        wait = _seconds_to_window_reset(_parse_http_date(lowered.get("date")))
+        resume_at = self._clock() + wait
+        if resume_at > self._resume_at:
+            logger.info(
+                "Per-minute quota spent after %s %s; holding all requests on this "
+                "client for %ds",
+                method,
+                target,
+                wait,
+            )
+            self._resume_at = resume_at
+
     async def request(
         self,
         method: str,
@@ -446,6 +483,7 @@ class AsyncHTTPTransport(HTTPTransportBase):
                         self._clock() - started,
                         attempt,
                     )
+                    self._pause_if_quota_spent(response, method, target)
                     return self.handle_response(response, method)
                 except niquests.Timeout as exc:
                     logger.debug(

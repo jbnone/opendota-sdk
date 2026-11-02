@@ -115,6 +115,31 @@ async def test_rate_limit_pause_is_logged_once_with_its_length(sdk_logs):
 
 
 @pytest.mark.asyncio
+async def test_proactive_pause_is_logged_once_at_info(sdk_logs):
+    transport, _ = make_transport(
+        [
+            FakeResponse(
+                200,
+                headers={
+                    "X-Rate-Limit-Remaining-Minute": "0",
+                    "Date": "Sun, 04 Oct 2026 12:00:45 GMT",
+                },
+            )
+        ]
+    )
+
+    await asyncio.gather(*(transport.request("GET", "/x") for _ in range(3)))
+
+    pauses = [m for m in messages(sdk_logs, logging.INFO) if "quota spent" in m]
+    assert pauses == [
+        (
+            "Per-minute quota spent after GET /x; holding all requests on this "
+            "client for 16s"
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_cooldown_wait_is_logged_at_debug(sdk_logs):
     transport, _ = make_transport(
         [FakeResponse(429, headers=_MINUTE_LIMITED), FakeResponse(200)]

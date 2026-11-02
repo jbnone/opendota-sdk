@@ -394,3 +394,66 @@ async def test_429_of_unknown_origin_falls_back_to_exponential_backoff():
     assert session.calls == 3
     assert exc_info.value.retry_after is None
     assert transport._resume_at == 0.0
+
+
+# --- Proactive pause on a spent minute quota ---------------------------------------
+
+_QUOTA_SPENT = {
+    "X-Rate-Limit-Remaining-Minute": "0",
+    "Date": "Sun, 04 Oct 2026 12:00:45 GMT",
+}
+
+
+@pytest.mark.asyncio
+async def test_spent_quota_on_a_success_pauses_the_next_request_without_a_429():
+    """Remaining 0 on a 200 holds the client to the window reset; no 429 is spent."""
+    transport, session = make_transport(
+        [FakeResponse(200, headers=_QUOTA_SPENT), FakeResponse(200)],
+        max_concurrency=1,
+    )
+
+    await transport.request("GET", "/a")
+    await transport.request("GET", "/b")
+
+    assert session.sent_at == [0.0, 16.0]
+    assert session.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_remaining_quota_does_not_pause():
+    transport, session = make_transport(
+        [
+            FakeResponse(
+                200, headers={**_QUOTA_SPENT, "X-Rate-Limit-Remaining-Minute": "1"}
+            )
+        ]
+    )
+
+    await transport.request("GET", "/a")
+    await transport.request("GET", "/b")
+
+    assert session.sent_at == [0.0, 0.0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("headers", [{}, {"X-Rate-Limit-Remaining-Minute": "soon"}])
+async def test_missing_or_malformed_remaining_header_does_nothing(headers):
+    transport, session = make_transport([FakeResponse(200, headers=headers)])
+
+    await transport.request("GET", "/a")
+    await transport.request("GET", "/b")
+
+    assert session.sent_at == [0.0, 0.0]
+    assert transport._resume_at == 0.0
+
+
+@pytest.mark.asyncio
+async def test_spent_quota_holds_every_concurrent_request():
+    transport, session = make_transport(
+        [FakeResponse(200, headers=_QUOTA_SPENT), FakeResponse(200)],
+        max_concurrency=1,
+    )
+
+    await asyncio.gather(*(transport.request("GET", f"/{n}") for n in "abc"))
+
+    assert session.sent_at == [0.0, 16.0, 16.0]
