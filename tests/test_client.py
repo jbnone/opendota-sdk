@@ -2,6 +2,7 @@
 
 import asyncio
 import inspect
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -568,7 +569,9 @@ async def test_get_hero_stats_drops_heroes_missing_from_the_constants(caplog):
         stats = await client.get_hero_stats()
 
     assert [entry.hero_id for entry in stats] == [1]
-    assert "missing from the hero constants (2)" in caplog.text
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "missing from the hero constants (2)" in warnings[0].getMessage()
 
 
 @pytest.mark.asyncio
