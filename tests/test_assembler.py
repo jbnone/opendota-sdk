@@ -1022,9 +1022,24 @@ _HERO_STATS_PAYLOAD = {
 }
 
 
-def test_normalize_hero_stats_builds_typed_model(assembler):
-    stats = assembler.normalize_hero_stats(_HERO_STATS_PAYLOAD)
+def _stats_hero(assembler, hero_id: int = 1, name: str = "npc_dota_hero_antimage"):
+    return assembler.normalize_hero(
+        {
+            "id": hero_id,
+            "name": name,
+            "localized_name": f"Hero {hero_id}",
+            "primary_attr": "agi",
+            "attack_type": "Melee",
+            "roles": ["Carry"],
+        }
+    )
 
+
+def test_normalize_hero_stats_builds_typed_model(assembler):
+    hero = _stats_hero(assembler)
+    stats = assembler.normalize_hero_stats(_HERO_STATS_PAYLOAD, hero=hero)
+
+    assert stats.hero is hero
     assert stats.hero_id == 1
     assert stats.hero_name == "npc_dota_hero_antimage"
     assert stats.pub_picks == 521236
@@ -1041,7 +1056,9 @@ def test_normalize_hero_stats_builds_typed_model(assembler):
 
 
 def test_normalize_hero_stats_folds_flat_bracket_keys_into_typed_entries(assembler):
-    stats = assembler.normalize_hero_stats(_HERO_STATS_PAYLOAD)
+    stats = assembler.normalize_hero_stats(
+        _HERO_STATS_PAYLOAD, hero=_stats_hero(assembler)
+    )
 
     brackets = {entry.bracket: entry for entry in stats.brackets}
     assert set(brackets) == {
@@ -1057,7 +1074,9 @@ def test_normalize_hero_stats_folds_flat_bracket_keys_into_typed_entries(assembl
 
 
 def test_normalize_hero_stats_computes_win_rates(assembler):
-    stats = assembler.normalize_hero_stats(_HERO_STATS_PAYLOAD)
+    stats = assembler.normalize_hero_stats(
+        _HERO_STATS_PAYLOAD, hero=_stats_hero(assembler)
+    )
 
     assert stats.pub_win_rate == pytest.approx(259663 / 521236)
     assert stats.turbo_win_rate == pytest.approx(126981 / 255234)
@@ -1068,7 +1087,9 @@ def test_normalize_hero_stats_computes_win_rates(assembler):
 
 
 def test_normalize_hero_stats_win_rates_are_none_without_picks(assembler):
-    stats = assembler.normalize_hero_stats({"id": 1, "name": "npc_dota_hero_antimage"})
+    stats = assembler.normalize_hero_stats(
+        {"id": 1, "name": "npc_dota_hero_antimage"}, hero=_stats_hero(assembler)
+    )
 
     assert stats.brackets == []
     assert stats.pub_win_rate is None
@@ -1088,15 +1109,58 @@ def test_normalize_hero_stats_win_rates_are_none_without_picks(assembler):
 )
 def test_normalize_hero_stats_requires_id_and_name(assembler, payload):
     with pytest.raises(OpenDotaError, match="Cannot build HeroStats"):
-        assembler.normalize_hero_stats(payload)
+        assembler.normalize_hero_stats(payload, hero=_stats_hero(assembler))
 
 
-def test_list_hero_stats_preserves_order_and_count(assembler):
+def test_list_hero_stats_preserves_order_and_attaches_heroes(assembler):
     second = {**_HERO_STATS_PAYLOAD, "id": 2, "name": "npc_dota_hero_axe"}
+    heroes = {
+        1: _stats_hero(assembler, 1),
+        2: _stats_hero(assembler, 2, "npc_dota_hero_axe"),
+    }
 
-    stats = assembler.list_hero_stats([_HERO_STATS_PAYLOAD, second])
+    stats = assembler.list_hero_stats(
+        [_HERO_STATS_PAYLOAD, second], heroes_by_id=heroes
+    )
 
     assert [entry.hero_id for entry in stats] == [1, 2]
+    assert [entry.hero for entry in stats] == [heroes[1], heroes[2]]
+
+
+def test_list_hero_stats_drops_unknown_heroes_with_one_warning(assembler, caplog):
+    raw = [
+        _HERO_STATS_PAYLOAD,
+        {**_HERO_STATS_PAYLOAD, "id": 9002, "name": "npc_dota_hero_b"},
+        {**_HERO_STATS_PAYLOAD, "id": 9001, "name": "npc_dota_hero_a"},
+    ]
+
+    with caplog.at_level(logging.WARNING, logger="opendota_sdk"):
+        stats = assembler.list_hero_stats(raw, heroes_by_id={1: _stats_hero(assembler)})
+
+    assert [entry.hero_id for entry in stats] == [1]
+    assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+        (
+            logging.WARNING,
+            (
+                "Hero statistics reference 2 hero id(s) missing from the hero "
+                "constants (9001, 9002); leaving them out"
+            ),
+        )
+    ]
+
+
+def test_list_hero_stats_logs_nothing_when_everything_resolves(assembler, caplog):
+    with caplog.at_level(logging.WARNING, logger="opendota_sdk"):
+        assembler.list_hero_stats(
+            [_HERO_STATS_PAYLOAD], heroes_by_id={1: _stats_hero(assembler)}
+        )
+
+    assert caplog.records == []
+
+
+def test_list_hero_stats_still_requires_id_and_name(assembler):
+    with pytest.raises(OpenDotaError, match="Cannot build HeroStats"):
+        assembler.list_hero_stats([{"name": "x"}], heroes_by_id={})
 
 
 def test_normalize_int_list_skips_unparseable_entries(assembler):

@@ -269,7 +269,9 @@ class OpenDotaAsyncClient:
 
         `/heroStats` is aggregate data that changes over time, but it is still cached so
         that concurrent per-hero lookups collapse to one request. Call
-        `clear_live_data()` to observe fresh numbers from the same client.
+        `clear_live_data()` to observe fresh numbers from the same client. The hero
+        constants are fetched alongside (at most once per client) so each entry carries
+        its `Hero`; an entry for a hero missing from the constants is left out.
 
         Returns:
             A fresh list of statistics for all heroes. Mutating the list does not affect
@@ -283,8 +285,13 @@ class OpenDotaAsyncClient:
                 if self._hero_stats_cache is None:
                     started = time.perf_counter()
                     generation = self._live_generation
-                    raw_stats = await self._get("/heroStats")
-                    stats = self._assembler.list_hero_stats(raw_stats)
+                    raw_stats, _ = await asyncio.gather(
+                        self._get("/heroStats"),
+                        self.get_heroes(),
+                    )
+                    stats = self._assembler.list_hero_stats(
+                        raw_stats, heroes_by_id=self._heroes_by_id
+                    )
                     if generation != self._live_generation:
                         logger.debug(
                             "Loaded statistics for %d heroes in %.2fs; not cached "

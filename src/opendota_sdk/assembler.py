@@ -239,18 +239,35 @@ class Assembler:
             raw=dict(merged),
         )
 
-    def normalize_hero_stats(self, raw: dict[str, Any]) -> HeroStats:
-        """Build a HeroStats model from a /heroStats entry."""
+    def _hero_stats_identity(self, raw: dict[str, Any]) -> tuple[int, str]:
+        """Read and validate the id and internal name of a /heroStats entry."""
         hero_id = self._normalize_int(raw.get("id"))
         hero_name = self._normalize_str(raw.get("name"))
         if hero_id is None or not hero_name:
             raise OpenDotaError(
                 f"Cannot build HeroStats: missing or malformed id/name in payload {raw!r}"
             )
+        return hero_id, hero_name
+
+    def normalize_hero_stats(self, raw: dict[str, Any], *, hero: Hero) -> HeroStats:
+        """Build a HeroStats model from a /heroStats entry.
+
+        Args:
+            raw: One entry of the `/heroStats` payload.
+            hero: The hero the entry belongs to, already resolved by the caller.
+
+        Returns:
+            The assembled statistics.
+
+        Raises:
+            OpenDotaError: If the entry has no usable `id` or `name`.
+        """
+        hero_id, hero_name = self._hero_stats_identity(raw)
 
         return HeroStats(
             hero_id=hero_id,
             hero_name=hero_name,
+            hero=hero,
             brackets=self._normalize_brackets(raw),
             pub_picks=self._require_int(raw.get("pub_pick")),
             pub_wins=self._require_int(raw.get("pub_win")),
@@ -266,9 +283,46 @@ class Assembler:
             raw=dict(raw),
         )
 
-    def list_hero_stats(self, raw_stats: Sequence[dict[str, Any]]) -> list[HeroStats]:
-        """Build HeroStats models from a /heroStats payload."""
-        return [self.normalize_hero_stats(raw) for raw in raw_stats]
+    def list_hero_stats(
+        self,
+        raw_stats: Sequence[dict[str, Any]],
+        *,
+        heroes_by_id: Mapping[int, Hero],
+    ) -> list[HeroStats]:
+        """Build HeroStats models from a /heroStats payload, attaching each `Hero`.
+
+        Entries whose hero id has no match in `heroes_by_id` -- possible if OpenDota's
+        data runs ahead of the hero constants mid-patch -- are left out of the result
+        and reported in one warning per payload.
+
+        Args:
+            raw_stats: The `/heroStats` payload.
+            heroes_by_id: Every known hero, keyed by numeric id.
+
+        Returns:
+            The assembled statistics, in payload order.
+
+        Raises:
+            OpenDotaError: If an entry has no usable `id` or `name`.
+        """
+        stats: list[HeroStats] = []
+        unresolved: list[int] = []
+        for raw in raw_stats:
+            hero_id, _ = self._hero_stats_identity(raw)
+            hero = heroes_by_id.get(hero_id)
+            if hero is None:
+                unresolved.append(hero_id)
+                continue
+            stats.append(self.normalize_hero_stats(raw, hero=hero))
+
+        if unresolved:
+            logger.warning(
+                "Hero statistics reference %d hero id(s) missing from the hero "
+                "constants (%s); leaving them out",
+                len(unresolved),
+                ", ".join(str(i) for i in sorted(set(unresolved))),
+            )
+        return stats
 
     def normalize_hero_item_popularity(
         self,
