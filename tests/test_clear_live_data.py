@@ -2,9 +2,11 @@
 
 import asyncio
 import logging
+from unittest.mock import AsyncMock
 
 import pytest
 
+from opendota_sdk.assembler import Assembler
 from opendota_sdk.client import OpenDotaAsyncClient
 
 _BENCHMARKS = {
@@ -26,6 +28,21 @@ def _stat(hero_id: int, pub_pick: int = 1) -> dict:
 def _client(handler) -> OpenDotaAsyncClient:
     client = OpenDotaAsyncClient()
     client._get = handler
+    # Hero stats join the hero constants; stub them so only live endpoints hit `_get`.
+    heroes = {
+        i: Assembler().normalize_hero(
+            {
+                "id": i,
+                "name": f"npc_dota_hero_{i}",
+                "localized_name": f"H{i}",
+                "primary_attr": "agi",
+                "attack_type": "Melee",
+            }
+        )
+        for i in range(1, 6)
+    }
+    client.get_heroes = AsyncMock(return_value=list(heroes.values()))
+    client._heroes_by_id = heroes
     return client
 
 

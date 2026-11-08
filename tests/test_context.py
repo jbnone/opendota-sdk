@@ -129,6 +129,8 @@ async def test_concurrent_hero_relationships_share_a_single_fetch():
     async with OpenDotaAsyncClient() as client:
         client._get = AsyncMock(side_effect=slow_get)
         heroes = [_hero(hero_id) for hero_id in range(1, 21)]
+        client.get_heroes = AsyncMock(return_value=heroes)
+        client._heroes_by_id = {hero.id: hero for hero in heroes}
 
         results = await asyncio.gather(*(hero.get_stats() for hero in heroes))
 
@@ -137,6 +139,7 @@ async def test_concurrent_hero_relationships_share_a_single_fetch():
     assert [result.hero_id for result in results if result is not None] == list(
         range(1, 21)
     )
+    assert [result.hero for result in results if result is not None] == heroes
 
 
 @pytest.mark.asyncio

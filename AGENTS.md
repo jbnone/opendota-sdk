@@ -52,7 +52,7 @@ Implemented today:
 - item constants flow via `get_items()`, and `get_item()` taking an `ItemName` member positionally (§5.4)
 - hero list flow via `get_heroes()` returning typed `Hero` models
 - hero statistics flow via `get_hero_stats()` (every hero) and `Hero.get_stats()` (one hero),
-  returning typed `HeroStats` models
+  returning typed `HeroStats` models, each carrying its resolved `Hero` (`HeroStats.hero`, §6.2)
 - hero item popularity via `Hero.get_item_popularity()` returning `HeroItemPopularity`, with every
   item id resolved to an `Item` — the first cross-domain join, and the first per-key endpoint (§6.3)
 - hero matchups via `Hero.get_matchups()` returning `HeroMatchups`, with every opposing hero id
@@ -159,7 +159,8 @@ Current examples:
 - `OpenDotaAsyncClient.get_items()` returns typed `Item` objects assembled from constants payloads
 - `OpenDotaAsyncClient.get_heroes()` merges `/heroes` with `/constants/heroes` and returns typed `Hero` models
 - `OpenDotaAsyncClient.get_hero_stats()` folds `/heroStats`'s flat `{bracket}_pick`/`{bracket}_win` keys
-  into typed `HeroBracketStats` entries and derives win rates, instead of exposing the raw numeric keys
+  into typed `HeroBracketStats` entries and derives win rates, instead of exposing the raw numeric keys,
+  and joins `/heroes` constants so each `HeroStats` carries its `Hero`
 - `Hero.get_item_popularity()` turns `/heroes/{id}/itemPopularity`'s bare item ids
   into full `Item` objects, joining two domains so the caller never cross-references
   `/constants/items` by hand
@@ -386,6 +387,16 @@ parts that are actually new:
 - `pub_*`/`turbo_*` totals plus 7-element per-day trend arrays, and `pro_pick`/`pro_win`/`pro_ban`
 - computed `win_rate` properties on `HeroBracketStats` and `HeroStats` (`pub_`/`turbo_`/`pro_`), all
   `None` when the matching pick count is zero
+
+`HeroStats.hero` is the `Hero` for `hero_id`, so a tier list needs no hand-built id index. It is the
+same client-unaware join as §6.4: `get_hero_stats()` fetches `/heroStats` and `get_heroes()`
+concurrently (the constants are cached, so at most one extra fetch per client) and passes
+`heroes_by_id` into `Assembler.list_hero_stats()`. An entry whose hero id is missing from the
+constants is dropped with **one WARNING per payload** (there is no list-level `raw` to keep it in);
+`hero` is required, never optional. `hero_id`/`hero_name` stay. The stats
+cache, lock, index and live-generation guard are untouched, so the `gather` single-flight in §2.3
+still holds. `HeroStats` equality now compares the `Hero`; `Hero` and `HeroStats` refer to each other
+in type only (`hero: "Hero"`, as `HeroMatchup.hero`).
 
 `Hero.get_stats()` was the SDK's first relationship method; `Hero.get_item_popularity()` (§6.3) is
 the second and `Hero.get_matchups()` (§6.4) the third, built the same way. Each resolves its client from a `ContextVar` in `_context.py`

@@ -2,12 +2,14 @@
 
 import asyncio
 import inspect
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from opendota_sdk._config import OpenDotaClientConfig
 from opendota_sdk._errors import OpenDotaError
+from opendota_sdk.assembler import Assembler
 from opendota_sdk.client import OpenDotaAsyncClient
 from opendota_sdk.enums import (
     HeroAttackType,
@@ -524,9 +526,58 @@ _HERO_STATS_API = [
 ]
 
 
+def _stub_stats_heroes(client):
+    """Give the client hero constants for ids 1 and 2, as `get_hero_stats()` joins them."""
+    heroes = {
+        entry["id"]: Assembler().normalize_hero(
+            {
+                "id": entry["id"],
+                "name": entry["name"],
+                "localized_name": str(entry["name"])
+                .removeprefix("npc_dota_hero_")
+                .title(),
+                "primary_attr": "agi",
+                "attack_type": "Melee",
+                "roles": ["Carry"],
+            }
+        )
+        for entry in _HERO_STATS_API
+    }
+    client.get_heroes = AsyncMock(return_value=list(heroes.values()))
+    client._heroes_by_id = heroes
+
+
+@pytest.mark.asyncio
+async def test_get_hero_stats_attaches_the_hero_to_each_entry():
+    async with OpenDotaAsyncClient() as client:
+        _stub_stats_heroes(client)
+        client._get = AsyncMock(return_value=_HERO_STATS_API)
+
+        stats = await client.get_hero_stats()
+
+    assert [entry.hero.localized_name for entry in stats] == ["Antimage", "Axe"]
+    assert all(entry.hero is client._heroes_by_id[entry.hero_id] for entry in stats)
+
+
+@pytest.mark.asyncio
+async def test_get_hero_stats_drops_heroes_missing_from_the_constants(caplog):
+    async with OpenDotaAsyncClient() as client:
+        _stub_stats_heroes(client)
+        del client._heroes_by_id[2]
+        client._get = AsyncMock(return_value=_HERO_STATS_API)
+
+        stats = await client.get_hero_stats()
+
+    assert [entry.hero_id for entry in stats] == [1]
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "missing from the hero constants (2)" in warnings[0].getMessage()
+
+
 @pytest.mark.asyncio
 async def test_get_hero_stats_returns_typed_models():
     async with OpenDotaAsyncClient() as client:
+        _stub_stats_heroes(client)
         client._get = AsyncMock(return_value=_HERO_STATS_API)
 
         stats = await client.get_hero_stats()
@@ -546,6 +597,7 @@ async def test_get_hero_stats_returns_typed_models():
 @pytest.mark.asyncio
 async def test_get_hero_stats_caches_and_returns_fresh_lists():
     async with OpenDotaAsyncClient() as client:
+        _stub_stats_heroes(client)
         client._get = AsyncMock(return_value=_HERO_STATS_API)
 
         first = await client.get_hero_stats()
@@ -566,6 +618,7 @@ async def test_get_hero_stats_concurrent_calls_fetch_once():
         return _HERO_STATS_API
 
     async with OpenDotaAsyncClient() as client:
+        _stub_stats_heroes(client)
         client._get = AsyncMock(side_effect=slow_get)
 
         results = await asyncio.gather(client.get_hero_stats(), client.get_hero_stats())
@@ -577,6 +630,7 @@ async def test_get_hero_stats_concurrent_calls_fetch_once():
 @pytest.mark.asyncio
 async def test_get_hero_stat_resolves_by_id():
     async with OpenDotaAsyncClient() as client:
+        _stub_stats_heroes(client)
         client._get = AsyncMock(return_value=_HERO_STATS_API)
 
         found = await client._get_hero_stat(hero_id=2)

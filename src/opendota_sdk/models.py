@@ -500,6 +500,8 @@ class HeroStats:
     Attributes:
         hero_id: Numeric hero id, matching `Hero.id`.
         hero_name: Internal hero name, matching `Hero.name`.
+        hero: The full `Hero` these statistics belong to, so callers can print display
+            names, roles, and attributes without building an id index.
         brackets: Per-bracket pick/win counts, one entry per `HeroSkillBracket`.
         pub_picks: Total public-match picks across all brackets.
         pub_wins: Total public-match wins across all brackets.
@@ -517,6 +519,7 @@ class HeroStats:
 
     hero_id: int
     hero_name: str
+    hero: "Hero"
 
     brackets: list[HeroBracketStats] = field(default_factory=list)
     pub_picks: int = 0
