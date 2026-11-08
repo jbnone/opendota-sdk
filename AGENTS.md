@@ -1008,8 +1008,8 @@ If the implementation changes materially, update this file in the same work.
    players domain (§12.1); whether to
    extract the per-key caching is a separate decision (§7).
 6. `README.md` has badges, a one-line description, the install line, and a link out to
-   the docs site. It is also the PyPI landing page (`readme = "README.md"`), so the
-   `async with` quickstart is the next thing worth adding.
+   the docs site, and the `async with` quickstart with sample output (#97). It is also the
+   PyPI landing page (`readme = "README.md"`).
 7. Docs site: scaffolded, see §13. Keep the Google-style docstrings on the public API
    (§10.4) accurate — they're the site's actual content, not just source-level docs.
 8. Agent workflow (§15): the product-groomer, python-developer, and code-reviewer agents
@@ -1042,7 +1042,7 @@ consumers equally, prefer the one that completes or hardens what exists.
    `/benchmarks` is done (§6.5); `/heroes/{id}/durations` was declined (#92)
 2. an `ItemName` enum and a positional `get_item()` lookup, mirroring `HeroName` and
    `get_hero()` (§6.1) — done (§5.4)
-3. the README `async with` quickstart (§12.6)
+3. the README `async with` quickstart — done (§12 item 6)
 4. the known limits this file already records: proactive throttling from
    `X-Rate-Limit-Remaining-Minute` — done (§8.2) — and an explicit refresh for cached live
    results — done as `clear_live_data()` (§2.3); a TTL was ruled out
@@ -1261,7 +1261,7 @@ and split the file so each agent's workflow can be read on its own.
   proposed surface and a design-level plan. The owner widened it from the decided list
   alone in October 2026. It creates nothing while three proposals are waiting for the owner. A `proposal`
   label starts nothing; the owner reads the issue and adds `approved`. The owner chose to
-  build it after one end-to-end endpoint run (#80/#87), rather than after all the §12.5
+  build it after one end-to-end endpoint run (#80/#87), rather than after all the §12 item 5
   endpoints as an earlier version of this section planned.
 - `refine-proposal` — the product-groomer again, sent back to one of its proposals. Fires
   when the owner comments `@claude` on an open issue labeled `proposal` and not yet
