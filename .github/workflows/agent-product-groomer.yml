@@ -73,7 +73,11 @@ jobs:
             `.claude/agents/product-groomer.md` and follow it exactly.
           # Write is for the issue body file only; with `contents: read` and no
           # git tools, nothing written can leave the runner except as an issue.
+          # `--permission-mode default` keeps `--allowedTools` a strict list.
+          # Since v1.0.273 the action defaults to auto mode, where a safety
+          # review may let through calls no rule covers, such as running code.
           claude_args: |
+            --permission-mode default
             --max-turns 50
             --allowedTools "Read,Glob,Grep,Write,Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue create:*),Bash(gh pr list:*),Bash(curl -sS https://api.opendota.com/api),Bash(curl -sS https://api.opendota.com/api/*),Bash(curl -sS https://raw.githubusercontent.com/odota/*)"
 
@@ -134,6 +138,8 @@ jobs:
           # changed. The edit rules allow only the body and the title; a label
           # added anyway would come from claude[bot], and `implement-issue`
           # ignores labels from anyone but the owner.
+          # `--permission-mode default`: same reason as `propose-issues`.
           claude_args: |
+            --permission-mode default
             --max-turns 40
             --allowedTools "Read,Glob,Grep,Write,Bash(gh issue view ${{ github.event.issue.number }}:*),Bash(gh api repos/jbnone/opendota-sdk/issues/comments/${{ github.event.comment.id }}:*),Bash(gh issue edit ${{ github.event.issue.number }} --body-file:*),Bash(gh issue edit ${{ github.event.issue.number }} --title:*),Bash(gh issue comment ${{ github.event.issue.number }} --body-file:*),Bash(curl -sS https://api.opendota.com/api),Bash(curl -sS https://api.opendota.com/api/*),Bash(curl -sS https://raw.githubusercontent.com/odota/*)"

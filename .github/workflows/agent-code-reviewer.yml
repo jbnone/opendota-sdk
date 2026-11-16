@@ -89,6 +89,13 @@ jobs:
           # PRs opened by the developer agent arrive with the Claude app as the
           # actor. These two logins are the only bots that may trigger a run.
           allowed_bots: "claude[bot],claude-code[bot]"
+          # Since v1.0.273 the action denies `uv` and other code-running
+          # commands on a PR whose author lacks write access, and it counts
+          # every bot as such, the Claude app included, so the reviewer could
+          # not run the validation commands on the developer's PRs. The job's
+          # `if:` already limits it to branches in this repository, which only
+          # the owner, the Claude app, and Renovate can push.
+          restrict_untrusted_prs: false
           additional_permissions: |
             actions: read
           prompt: |

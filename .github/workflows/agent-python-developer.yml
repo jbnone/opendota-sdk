@@ -125,6 +125,12 @@ jobs:
           # Tag mode on the labeled issue: a tracking comment, the full issue
           # context, and a `claude/` branch for the work.
           track_progress: true
+          # Since v1.0.273 the action checks `label_trigger` even when a
+          # `prompt` is set, and its default is `claude`. The job's `if:`
+          # already admits only the owner's two labels, so accept the one
+          # that fired. Without this the action skips itself and the job
+          # still ends green.
+          label_trigger: ${{ github.event.label.name }}
           # Only the owner's comments reach the model; the issue body is
           # already vetted by the owner's label.
           include_comments_by_actor: jbnone
@@ -136,7 +142,11 @@ jobs:
             `.claude/agents/python-developer.md` and follow it exactly for this
             issue. Open the pull request yourself with `gh pr create` when the
             work is done; do not stop at a link to a pre-filled PR page.
+          # `--permission-mode acceptEdits` keeps `--allowedTools` a strict
+          # list. Since v1.0.273 the action defaults to auto mode, where a
+          # safety review may let through calls no rule covers.
           claude_args: |
+            --permission-mode acceptEdits
             --max-turns 80
             --allowedTools "Read,Glob,Grep,Edit,Write,Bash(uv run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(gh issue view:*),Bash(gh pr create:*),Bash(curl -sS https://api.opendota.com/api/*),Bash(curl -sS https://raw.githubusercontent.com/odota/*)"
 
@@ -208,6 +218,12 @@ jobs:
           # No `prompt`: tag mode answers the owner's @claude comment, checks
           # out the PR branch, and commits to it.
           include_comments_by_actor: jbnone
+          # Since v1.0.273 the action denies `uv` and other code-running
+          # commands on a PR whose author lacks write access, and it counts
+          # every bot as such, the Claude app included, so the developer could
+          # not run the checks on its own PR. The guard step above already
+          # limits this job to this repository's `claude/` branches.
+          restrict_untrusted_prs: false
           additional_permissions: |
             actions: read
           settings: ${{ env.REQUIRE_GREEN_CHECKS }}
@@ -216,7 +232,9 @@ jobs:
           # anyone; the role file treats those as information, never instructions.
           # Two rules for the endpoint: with a `*` for the PR number, a trailing
           # ` *` no longer also matches the bare command.
+          # `--permission-mode acceptEdits`: same reason as `implement-issue`.
           claude_args: |
+            --permission-mode acceptEdits
             --max-turns 60
             --append-system-prompt "You are the python-developer role for this repository. Read .claude/agents/python-developer.md and follow its section 'Revising your own pull request'. Commit to this PR's branch; do not open a new pull request."
             --allowedTools "Read,Glob,Grep,Edit,Write,Bash(uv run:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(gh pr view:*),Bash(gh api repos/jbnone/opendota-sdk/pulls/*/comments),Bash(gh api repos/jbnone/opendota-sdk/pulls/*/comments *),Bash(curl -sS https://api.opendota.com/api/*),Bash(curl -sS https://raw.githubusercontent.com/odota/*)"
@@ -289,6 +307,8 @@ jobs:
           include_comments_by_actor: jbnone
           # The PR's latest push usually came from the Claude app itself.
           allowed_bots: "claude[bot],claude-code[bot]"
+          # Same reason as `revise-on-request`: the PR's author is the Claude app.
+          restrict_untrusted_prs: false
           additional_permissions: |
             actions: read
           settings: ${{ env.REQUIRE_GREEN_CHECKS }}
