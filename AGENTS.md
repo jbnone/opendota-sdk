@@ -1345,6 +1345,23 @@ the first proposal that needs design, most likely the first issue in a new domai
    on a public repo, and `refine-proposal` reads the issue's comments, so a prompt injection
    could at worst produce a bad `proposal` issue, which starts nothing. Do not give either
    `uv run`, write access to code, or any label but `proposal`.
+7. The tool allowlists in gates 5 and 6 are strict only because each job pins its permission
+   mode in `claude_args`: `--permission-mode default` for the two groomer jobs,
+   `--permission-mode acceptEdits` for `implement-issue` and `revise-on-request`. Since
+   v1.0.273 the action defaults to auto mode, where a safety review may allow calls no rule
+   covers. `review-pull-request` and `fix-review-findings` set `allowed_bots`, which keeps
+   the earlier mode. Do not remove the pins. The same release made `label_trigger` apply
+   even when a `prompt` is set; `implement-issue` passes the label that fired, since its
+   `if:` already admits only the owner's two labels. Without it the action skips itself and
+   the job still ends green, which is how #127 and #128 got no PR.
+8. `review-pull-request`, `revise-on-request`, and `fix-review-findings` set
+   `restrict_untrusted_prs: false`. Since v1.0.273 the action denies code-running commands
+   (`uv`, `pytest`, shells) on a PR whose author lacks write access, and it counts every bot
+   as such, the Claude app included, whatever `allowed_bots` says. Without the opt-out the
+   reviewer could not run the validation commands on the developer's PRs, nor the developer
+   its own checks. The owner turned it off in November 2026 because these jobs never see
+   outside code: the reviewer's `if:` requires a head in this repository, and the other two
+   have the guard step. Do not remove that `if:` or those guards while the opt-out is set.
 
 Labels: `proposal` (groomer output, nothing runs), `needs-design` (architect, planned),
 `design-approved` and `approved` (`implement-issue`). The action restores `.claude/` and
