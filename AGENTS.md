@@ -348,7 +348,10 @@ Current shape:
   list mirroring the vendored `heroes.json`, not built from the API at runtime, so type checkers
   and editors can see the members; `test_hero_name.py` fails, naming the member to add, when
   the fixture gains a hero. `get_hero()` takes `hero_name` positionally as `HeroName | str`, so
-  a plain string still finds a hero added in a patch newer than the enum
+  a plain string still finds a hero added in a patch newer than the enum. `get_hero()` and
+  `get_item()` carry `@overload`s: an enum member passed positionally is typed `Hero`/`Item`,
+  while a plain string or `hero_id`/`item_id` stays `| None`. Runtime behavior is the same;
+  `tests/test_lookup_typing.py` pins the types with `assert_type`, checked by `ty check`
 
 Implications:
 
