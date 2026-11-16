@@ -1028,7 +1028,7 @@ data they would otherwise fetch and join by hand.
 
 The universe of endpoints is OpenDota's OpenAPI spec at `https://api.opendota.com/api`: 55
 paths in October 2026. The SDK covers `/heroes`, `/heroStats`, `/heroes/{id}/itemPopularity`,
-`/heroes/{id}/matchups`, and the five `/constants/*` files the hero and item flows join.
+`/heroes/{id}/matchups`, `/benchmarks`, and the five `/constants/*` files the hero and item flows join.
 
 **Model what you return.** A proposal never hands callers bare ids for an entity the SDK
 does not model: `/heroes/{id}/players` returns player account ids, so `Hero.get_players()`
