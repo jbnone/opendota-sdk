@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 from types import TracebackType
-from typing import Any, Self
+from typing import Any, Self, overload
 
 from opendota_sdk._config import OpenDotaClientConfig
 from opendota_sdk._context import bind_client, unbind_client
@@ -233,6 +233,14 @@ class OpenDotaAsyncClient:
 
         return list(self._heroes_cache)
 
+    @overload
+    async def get_hero(self, hero_name: HeroName, *, hero_id: None = None) -> Hero: ...
+
+    @overload
+    async def get_hero(
+        self, hero_name: str | None = None, *, hero_id: int | None = None
+    ) -> Hero | None: ...
+
     async def get_hero(
         self, hero_name: HeroName | str | None = None, *, hero_id: int | None = None
     ) -> Hero | None:
@@ -248,7 +256,9 @@ class OpenDotaAsyncClient:
             hero_id: Numeric hero id. Keyword-only.
 
         Returns:
-            The matching hero, or `None` if no hero has that id or name.
+            The matching hero, or `None` if no hero has that id or name. For type
+            checkers, a `HeroName` member passed positionally is typed as `Hero`
+            (never `None`); a plain string or `hero_id` is typed `Hero | None`.
 
         Raises:
             ValueError: If neither or both of `hero_id` and `hero_name` are given.
@@ -533,6 +543,14 @@ class OpenDotaAsyncClient:
 
         return list(self._items_cache)
 
+    @overload
+    async def get_item(self, item_name: ItemName, *, item_id: None = None) -> Item: ...
+
+    @overload
+    async def get_item(
+        self, item_name: str | None = None, *, item_id: int | None = None
+    ) -> Item | None: ...
+
     async def get_item(
         self, item_name: ItemName | str | None = None, *, item_id: int | None = None
     ) -> Item | None:
@@ -548,7 +566,9 @@ class OpenDotaAsyncClient:
             item_id: Numeric item id. Keyword-only.
 
         Returns:
-            The matching item, or `None` if no item has that id or name.
+            The matching item, or `None` if no item has that id or name. For type
+            checkers, an `ItemName` member passed positionally is typed as `Item`
+            (never `None`); a plain string or `item_id` is typed `Item | None`.
 
         Raises:
             ValueError: If neither or both of `item_id` and `item_name` are given.
