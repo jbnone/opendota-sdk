@@ -15,6 +15,7 @@ from opendota_sdk._context import active_client
 from opendota_sdk.enums import (
     BenchmarkMetric,
     HeroAttackType,
+    HeroName,
     HeroPrimaryAttribute,
     HeroRole,
     HeroSkillBracket,
@@ -384,6 +385,28 @@ class HeroMatchups:
     hero_id: int
     matchups: list[HeroMatchup] = field(default_factory=list)
     raw: list[dict[str, Any]] = field(default_factory=list, repr=False, compare=False)
+
+    def get(self, hero: "Hero | HeroName | str | int") -> HeroMatchup | None:
+        """Look up the record against one opposing hero.
+
+        Args:
+            hero: The opponent, as a `Hero` or an `int` (both matched by `Hero.id`), or
+                as a `HeroName` member or internal-name string such as
+                `"npc_dota_hero_antimage"` (matched by `Hero.name`).
+
+        Returns:
+            The matchup, or `None` when the pair has no recorded games. The data is
+            pro-league only, so `None` means no pro games, not that nothing is known.
+        """
+        if isinstance(hero, Hero):
+            hero = hero.id
+        for matchup in self.matchups:
+            if isinstance(hero, int):
+                if matchup.hero.id == hero:
+                    return matchup
+            elif matchup.hero.name == hero:
+                return matchup
+        return None
 
     @property
     def is_empty(self) -> bool:

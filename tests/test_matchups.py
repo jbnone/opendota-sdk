@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from opendota_sdk import OpenDotaAsyncClient, OpenDotaError
+from opendota_sdk import HeroName, OpenDotaAsyncClient, OpenDotaError
 from opendota_sdk.assembler import Assembler
 from opendota_sdk.models import Hero
 
@@ -293,3 +293,72 @@ async def test_hero_get_matchups_delegates_to_active_client():
 
     assert result == "sentinel"
     client._get_hero_matchups.assert_awaited_once_with(hero_id=3)
+
+
+# --- HeroMatchups.get() -----------------------------------------------------------
+
+
+def _two_matchups(assembler, heroes_by_id):
+    return assembler.normalize_hero_matchups(
+        [
+            {"hero_id": 2, "games_played": 91, "wins": 45},
+            {"hero_id": 3, "games_played": 10, "wins": 4},
+        ],
+        hero_id=1,
+        heroes_by_id=heroes_by_id,
+    )
+
+
+def test_get_finds_a_matchup_by_hero(assembler, heroes_by_id):
+    result = _two_matchups(assembler, heroes_by_id)
+
+    assert result.get(heroes_by_id[3]) is result.matchups[1]
+
+
+def test_get_finds_a_matchup_by_id(assembler, heroes_by_id):
+    result = _two_matchups(assembler, heroes_by_id)
+
+    assert result.get(2) is result.matchups[0]
+
+
+def test_get_finds_a_matchup_by_internal_name(assembler, heroes_by_id):
+    result = _two_matchups(assembler, heroes_by_id)
+
+    assert result.get("npc_dota_hero_3") is result.matchups[1]
+
+
+def test_get_finds_a_matchup_by_hero_name_member(assembler):
+    hero = assembler.normalize_hero(
+        {
+            "id": 1,
+            "name": HeroName.ANTI_MAGE.value,
+            "localized_name": "Anti-Mage",
+            "primary_attr": "agi",
+            "attack_type": "Melee",
+            "roles": ["Carry"],
+        }
+    )
+    result = assembler.normalize_hero_matchups(
+        [{"hero_id": 1, "games_played": 5, "wins": 2}],
+        hero_id=2,
+        heroes_by_id={1: hero},
+    )
+
+    assert result.get(HeroName.ANTI_MAGE) is result.matchups[0]
+
+
+def test_get_returns_none_for_an_absent_opponent(assembler, heroes_by_id):
+    result = _two_matchups(assembler, heroes_by_id)
+
+    assert result.get(heroes_by_id[4]) is None
+    assert result.get(4) is None
+    assert result.get("npc_dota_hero_4") is None
+    assert result.get(99999) is None
+
+
+def test_get_on_an_empty_result_returns_none(assembler, heroes_by_id):
+    result = assembler.normalize_hero_matchups(
+        [], hero_id=99999, heroes_by_id=heroes_by_id
+    )
+
+    assert result.get(heroes_by_id[1]) is None
