@@ -492,6 +492,9 @@ Shape and decisions, copied by hand from §6.3 (§7):
   `HeroMatchups(hero_id, matchups, raw)` with `is_empty`; sorted most games first, ties by the
   opposing hero's localized name. Both frozen; `HeroMatchup.hero` is annotated `"Hero"` because
   `Hero` is defined after it and itself returns `HeroMatchups`.
+- `HeroMatchups.get(hero)` is a pure lookup over `matchups`, like `HeroBenchmarks.get()`: it takes
+  `Hero | HeroName | str | int`, matches a `Hero` or `int` by `Hero.id` and a name by `Hero.name`,
+  and returns `None` when the pair has no recorded games. No fetch, no field, no log line.
 - **client-unaware join:** the client fetches the payload and `get_heroes()` concurrently, then
   passes `heroes_by_id` into `Assembler.normalize_hero_matchups()`. Opposing ids missing from the hero
   constants are dropped with **one WARNING per payload** and survive only in `raw`. A missing or
